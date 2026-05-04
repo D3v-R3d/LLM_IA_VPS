@@ -7,36 +7,61 @@ This directory contains database models and session management.
 ```
 models/
 ├── database.py       # Database session and engine
-├── schemas.py        # Shared database models
-└── README.md         # This file
+└── __init__.py
 ```
 
 ## Database Connection
 
 `database.py` manages:
-- Database engine creation
-- Session factory
-- Dependency injection for database sessions
+
+- SQLAlchemy engine creation
+- Session factory for database connections
+- Dependency injection via `get_db()` function
+
+### Configuration
+
+The database connection is configured using the `DATABASE_URL` environment variable:
+
+```
+postgresql://postgres:password@postgres:5432/tower_db
+```
+
+### Usage
+
+```python
+from app.models.database import get_db, SessionLocal, Base
+
+# Get a database session
+def some_function():
+    db = next(get_db())
+    try:
+        # Use db session
+        pass
+    finally:
+        db.close()
+```
+
+### Key Components
+
+- `engine`: SQLAlchemy engine instance
+- `SessionLocal`: Session factory for creating database sessions
+- `Base`: Declarative base class for model definitions
+- `get_db()`: Generator function for dependency injection
 
 ## Models
 
 Database models define:
-- Table structures
+- Table structures using SQLAlchemy ORM
 - Relationships between tables
 - Validation rules
 
-## Usage
+## Usage with Services
 
-Models are used throughout the application for data persistence:
+The database service uses this module for database connectivity:
 
 ```python
-from app.models.database import get_db
-from app.models.schemas import User
+from app.services.database_service import DatabaseService
+from app.models.database import SessionLocal
+
+db_service = DatabaseService()
 ```
-
-## Migrations
-
-This project uses Alembic for database migrations (when implemented):
-- Migration scripts in `alembic/` directory
-- Automatic migration generation
-- Safe upgrade/downgrade procedures

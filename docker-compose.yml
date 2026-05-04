@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # Backend service (FastAPI)
   backend:
     build:
       context: ./backend
@@ -11,14 +8,18 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/tower_db
       - QDRANT_URL=http://qdrant:6333
-      - OLLAMA_API_BASE=http://host.docker.internal:11434
-    volumes:
-      - ./backend:/app
+
+      # 🔥 OLLAMA CLOUD MODE
+      - OLLAMA_HOST=https://ollama.com
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+
     networks:
       - tower_network
+
     depends_on:
       - postgres
       - qdrant
+
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=Host(`api.srv1632761.hstgr.cloud`) && PathPrefix(`/api`)"
@@ -28,15 +29,16 @@ services:
       - "traefik.http.middlewares.backend-stripprefix.stripprefix.prefixes=/api"
       - "traefik.http.routers.backend.middlewares=backend-stripprefix"
 
-  # Frontend service (React)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: tower_frontend
     restart: unless-stopped
+
     networks:
       - tower_network
+
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`www.srv1632761.hstgr.cloud`)"
@@ -44,7 +46,6 @@ services:
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
-  # PostgreSQL database
   postgres:
     image: postgres:15-alpine
     container_name: tower_postgres
@@ -57,10 +58,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - tower_network
-    labels:
-      - "traefik.enable=false"
 
-  # Qdrant vector database
   qdrant:
     image: qdrant/qdrant:v1.7.4
     container_name: tower_qdrant
@@ -69,12 +67,6 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - tower_network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.qdrant.rule=Host(`api.srv1632761.hstgr.cloud`) && PathPrefix(`/qdrant`)"
-      - "traefik.http.routers.qdrant.entrypoints=websecure"
-      - "traefik.http.routers.qdrant.tls.certresolver=letsencrypt"
-      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
 
 volumes:
   postgres_data:

@@ -15,40 +15,113 @@ The application consists of:
 
 ```
 tower_project/
-├── backend/          # FastAPI backend application
-├── frontend/         # React frontend application
-├── docker/           # Docker configurations
-├── docs/             # Documentation files
-├── docker-compose.yml # Docker Compose configuration
-└── README.md         # This file
+├── backend/                  # FastAPI backend application
+│   ├── app/
+│   │   ├── core/            # Configuration (config.py)
+│   │   ├── models/          # Database models (database.py)
+│   │   ├── services/        # Business logic services
+│   │   │   ├── llm_service.py         # Ollama Cloud integration
+│   │   │   ├── qdrant_service.py     # Qdrant operations
+│   │   │   └── database_service.py  # PostgreSQL operations
+│   │   └── main.py          # Application entry point
+│   └── requirements.txt
+├── frontend/                 # React frontend application
+├── docker/                    # Docker configurations
+├── docker-compose.yml         # Docker Compose configuration
+└── README.md                 # This file
 ```
 
-## Prerequisites
+## Services Configuration
 
-- Docker and Docker Compose
-- Ollama installed and running locally (for LLM inference)
-- Domain names configured to point to your server
+### Backend Configuration
+The backend connects to three external services configured via environment variables:
+
+- **DATABASE_URL**: `postgresql://postgres:password@postgres:5432/tower_db`
+- **QDRANT_URL**: `http://qdrant:6333`
+- **OLLAMA_API_BASE**: `https://ollama.com`
+
+### Health Check Endpoints
+
+The backend provides health check endpoints for monitoring:
+
+- `GET /health` - Overall application health
+- `GET /health/database` - PostgreSQL health status
+- `GET /health/qdrant` - Qdrant vector database health status
+- `GET /health/ollama` - Ollama Cloud API health status
 
 ## Getting Started
 
-1. Clone this repository
-2. Update the domain names in `docker-compose.yml` to match your domain
-3. Ensure Ollama is running on your host machine
-4. Run the application:
+### Prerequisites
+
+- Docker and Docker Compose
+- Ollama Cloud account (for LLM inference)
+- Domain names configured to point to your server (optional)
+
+### Running the Application
+
+1. Start all services:
 
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
-## Services
+2. Check service health:
 
-- **Frontend**: http://www.yourdomain.com
-- **Backend API**: http://api.yourdomain.com/api
-- **Qdrant Dashboard**: http://api.yourdomain.com/qdrant
+```bash
+# Main health check
+curl http://localhost:8000/health
 
-## Configuration
+# Individual service checks
+curl http://localhost:8000/health/database
+curl http://localhost:8000/health/qdrant
+curl http://localhost:8000/health/ollama
+```
 
-Environment variables can be set in the `docker-compose.yml` file or through a `.env` file.
+### Accessing Services
+
+After deployment with Traefik:
+- **Frontend**: https://www.srv1632761.hstgr.cloud
+- **Backend API**: https://api.srv1632761.hstgr.cloud/api
+- **Qdrant Dashboard**: https://api.srv1632761.hstgr.cloud/qdrant
+
+## Backend Development
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+uvicorn app.main:app --reload
+```
+
+## API Documentation
+
+When running locally, API documentation is available at:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## Docker Services
+
+### PostgreSQL
+- **Container**: tower_postgres
+- **Port**: 5432
+- **Database**: tower_db
+- **Credentials**: postgres/password
+
+### Qdrant (Vector Database)
+- **Container**: tower_qdrant
+- **Ports**: 6333 (REST), 6334 (gRPC)
+- **Data Volume**: qdrant_data
+
+### Backend (FastAPI)
+- **Container**: tower_backend
+- **Port**: 8000
+- **Framework**: Uvicorn
+
+### Frontend (React)
+- **Container**: tower_frontend
+- **Port**: 3000
+- **Server**: serve (static file serving)
 
 ## Deployment Notes
 
