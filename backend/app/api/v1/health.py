@@ -16,6 +16,7 @@ from fastapi import APIRouter
 from app.services.llm_service import LLMService
 from app.services.qdrant_service import QdrantService
 from app.services.database_service import DatabaseService
+from app.services.telegram_service import TelegramService
 from app.core.config import settings
 
 
@@ -91,4 +92,24 @@ async def health_ollama():
         "status": "healthy" if is_healthy else "unhealthy",
         "service": "ollama",
         "url": settings.OLLAMA_HOST
+    }
+
+
+@router.get("/telegram")
+async def health_telegram():
+    """
+    Telegram bot health check.
+
+    Verifies connectivity to the Telegram Bot API.
+
+    Returns:
+        Dict containing status, service name, and bot info.
+    """
+    telegram_service = TelegramService()
+    is_healthy = await telegram_service.health_check()
+    bot_info = await telegram_service.get_me()
+    return {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "service": "telegram",
+        "bot_info": bot_info
     }

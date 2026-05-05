@@ -8,10 +8,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/tower_db
       - QDRANT_URL=http://qdrant:6333
-
-      # 🔥 OLLAMA CLOUD MODE
-      - OLLAMA_HOST=https://ollama.com
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_HOST=http://ollama:11434
 
     networks:
       - tower_network
@@ -19,15 +16,14 @@ services:
     depends_on:
       - postgres
       - qdrant
+      - ollama
 
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`api.srv1632761.hstgr.cloud`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.rule=Host(`api.srv1632761.hstgr.cloud`)"
       - "traefik.http.routers.backend.entrypoints=websecure"
       - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
       - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      - "traefik.http.middlewares.backend-stripprefix.stripprefix.prefixes=/api"
-      - "traefik.http.routers.backend.middlewares=backend-stripprefix"
 
   frontend:
     build:
@@ -59,6 +55,15 @@ services:
     networks:
       - tower_network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tower_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - tower_network
+
   qdrant:
     image: qdrant/qdrant:v1.7.4
     container_name: tower_qdrant
@@ -68,9 +73,25 @@ services:
     networks:
       - tower_network
 
+  adminer:
+    image: adminer:4.8.1
+    container_name: tower_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - tower_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer.rule=Host(`admin.srv1632761.hstgr.cloud`)"
+      - "traefik.http.routers.adminer.entrypoints=websecure"
+      - "traefik.http.routers.adminer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+
 volumes:
   postgres_data:
   qdrant_data:
+  ollama_data:
 
 networks:
   tower_network:

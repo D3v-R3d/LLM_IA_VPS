@@ -6,10 +6,16 @@ which loads configuration from environment variables.
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
     """
     Application settings loaded from environment variables.
 
@@ -28,20 +34,21 @@ class Settings(BaseSettings):
     # Default Qdrant server URL (runs as Docker service named 'qdrant')
     QDRANT_URL: str = "http://qdrant:6333"
 
-    # Ollama Cloud API base URL
-    # Note: Ollama Cloud provides LLM inference through this endpoint
-    OLLAMA_HOST: str = "https://ollama.com"
+    # Ollama local server URL for embeddings
+    # When running in Docker, use the service name 'ollama'
+    OLLAMA_HOST: str = "http://ollama:11434"
+
+    # Ollama Cloud API URL for chat completions
+    OLLAMA_CLOUD_HOST: str = "https://ollama.com"
 
     # Ollama Cloud API key for authentication
-    # Get your API key from https://ollama.com/account
     OLLAMA_API_KEY: Optional[str] = None
 
-    class Config:
-        # Load environment variables from .env file if present
-        env_file = ".env"
-
-        # Ensure environment variable names match exactly (case-sensitive)
-        case_sensitive = True
+    # Telegram Bot configuration
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_BOT_USERNAME: Optional[str] = None
+    TELEGRAM_SECRET_TOKEN: Optional[str] = "tower_secret_token_change_me"
+    TELEGRAM_WEBHOOK_URL: Optional[str] = None
 
 
 # Global settings instance used throughout the application

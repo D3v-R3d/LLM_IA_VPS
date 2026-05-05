@@ -1,133 +1,115 @@
 # Tower Project - LLM Application
 
-This project implements a full-stack application for working with Large Language Models (LLMs) using Ollama Cloud, embedding services, and data storage.
+This project implements a full-stack RAG application with Telegram bot integration.
 
-## Architecture Overview
-
-The application consists of:
-- **Frontend**: React application for user interface
-- **Backend**: FastAPI application for API endpoints and LLM integration
-- **Database**: PostgreSQL for structured data storage
-- **Vector Store**: Qdrant for embedding storage and similarity search
-- **Reverse Proxy**: Traefik for routing and SSL termination
-
-## Project Structure
+## Architecture
 
 ```
 tower_project/
-├── backend/                  # FastAPI backend application
+├── backend/              # FastAPI backend
 │   ├── app/
-│   │   ├── core/            # Configuration (config.py)
-│   │   ├── models/          # Database models (database.py)
-│   │   ├── services/        # Business logic services
-│   │   │   ├── llm_service.py         # Ollama Cloud integration
-│   │   │   ├── qdrant_service.py     # Qdrant operations
-│   │   │   └── database_service.py  # PostgreSQL operations
-│   │   └── main.py          # Application entry point
-│   └── requirements.txt
-├── frontend/                 # React frontend application
-├── docker/                    # Docker configurations
-├── docker-compose.yml         # Docker Compose configuration
-└── README.md                 # This file
+│   │   ├── api/v1/      # API endpoints
+│   │   ├── core/        # Configuration
+│   │   ├── models/      # SQLAlchemy models
+│   │   ├── schemas/     # Pydantic schemas
+│   │   ├── services/    # Business logic
+│   │   └── main.py
+│   └── tests/
+├── frontend/             # React frontend
+├── docker/               # Docker configs
+└── docker-compose.yml
 ```
 
-## Services Configuration
+## Services
 
-### Backend Configuration
-The backend connects to three external services configured via environment variables:
+| Service | Description |
+|---------|-------------|
+| PostgreSQL | Structured data (users, conversations, messages, documents) |
+| Qdrant | Vector storage for embeddings |
+| Ollama Cloud | Chat completions (minimax-m2.7) |
+| Local Ollama | Embeddings (nomic-embed-text, 768 dims) |
+| Telegram Bot | Bidirectional messaging with users |
+| Traefik | Reverse proxy with SSL |
 
-- **DATABASE_URL**: `postgresql://postgres:password@postgres:5432/tower_db`
-- **QDRANT_URL**: `http://qdrant:6333`
-- **OLLAMA_API_BASE**: `https://ollama.com`
+## API Endpoints
 
-### Health Check Endpoints
+### Health
+- `GET /health` - Overall health
+- `GET /health/database` - PostgreSQL
+- `GET /health/qdrant` - Qdrant
+- `GET /health/ollama` - Ollama Cloud
+- `GET /health/telegram` - Telegram bot
 
-The backend provides health check endpoints for monitoring:
+### Chat
+- `POST /chat` - Chat completion (Ollama Cloud)
 
-- `GET /health` - Overall application health
-- `GET /health/database` - PostgreSQL health status
-- `GET /health/qdrant` - Qdrant vector database health status
-- `GET /health/ollama` - Ollama Cloud API health status
+### Embeddings
+- `POST /embeddings/document` - Embed single document
+- `POST /embeddings/documents` - Embed multiple documents
+- `POST /embeddings/search` - Semantic search
+
+### Telegram
+- `POST /telegram/webhook` - Receive Telegram updates
+- `POST /telegram/notify/{user_id}` - Send notification
 
 ## Getting Started
 
-### Prerequisites
-
-- Docker and Docker Compose
-- Ollama Cloud account (for LLM inference)
-- Domain names configured to point to your server (optional)
-
-### Running the Application
-
-1. Start all services:
-
 ```bash
+# Start all services
 docker-compose up -d --build
-```
 
-2. Check service health:
-
-```bash
-# Main health check
+# Check health
 curl http://localhost:8000/health
-
-# Individual service checks
-curl http://localhost:8000/health/database
-curl http://localhost:8000/health/qdrant
-curl http://localhost:8000/health/ollama
 ```
 
-### Accessing Services
+## Telegram Bot
 
-After deployment with Traefik:
-- **Frontend**: https://www.srv1632761.hstgr.cloud
-- **Backend API**: https://api.srv1632761.hstgr.cloud/api
-- **Qdrant Dashboard**: https://api.srv1632761.hstgr.cloud/qdrant
+The Telegram bot (`@R3d0n3_Bot`) provides bidirectional messaging with session support and auto-compression.
 
-## Backend Development
+### Commands
+- `/register email password name` - Create account and link Telegram
+- `/link email` - Link existing account
+- `/unlink` - Unlink Telegram account
+- `/status` - Check link status
+- `/help` - Show help
+- `/new` - Start a new session (conversation)
+- `/sessions` - List all your sessions
+- `/reset` - Reset current session
+- `/compress` - Manually compress conversation history
+- `/setpref key=value` - Set user preference
+- `/prefs` - Show current preferences
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+### Session Management
+Sessions keep conversations isolated. Use `/new` to start fresh, `/sessions` to switch between sessions.
 
-# Run the application
-uvicorn app.main:app --reload
-```
+### Auto-Compression
+When conversation exceeds 2000 tokens, the bot automatically compresses history by:
+1. Summarizing old messages via LLM
+2. Keeping last 15 messages
+3. Prepending summary as context
 
-## API Documentation
+This prevents token overflow while preserving important context.
 
-When running locally, API documentation is available at:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+### Web Access Tools
+The bot can access the internet on demand:
+- **Search**: `search_web(query)` - DuckDuckGo search
+- **Fetch**: `fetch_url(url)` - Read webpage content
+- **API**: `call_api(url, method, headers, body)` - Call external APIs
 
-## Docker Services
+Example: "What's the weather in Tokyo?" → Bot searches web → Returns result
 
-### PostgreSQL
-- **Container**: tower_postgres
-- **Port**: 5432
-- **Database**: tower_db
-- **Credentials**: postgres/password
+## RAG Flow
 
-### Qdrant (Vector Database)
-- **Container**: tower_qdrant
-- **Ports**: 6333 (REST), 6334 (gRPC)
-- **Data Volume**: qdrant_data
+1. **Document → Chunks** (chunking_service.py)
+2. **Chunks → Embeddings** (local Ollama nomic-embed-text)
+3. **Embeddings → Qdrant** (qdrant_service.py)
+4. **Query → Similarity Search** (embedding_service.py search_similar)
+5. **Context + Query → LLM** (Ollama Cloud)
 
-### Backend (FastAPI)
-- **Container**: tower_backend
-- **Port**: 8000
-- **Framework**: Uvicorn
+## Deployment
 
-### Frontend (React)
-- **Container**: tower_frontend
-- **Port**: 3000
-- **Server**: serve (static file serving)
+- Frontend: https://www.srv1632761.hstgr.cloud
+- Backend API: https://api.srv1632761.hstgr.cloud/api
+- Qdrant Dashboard: https://api.srv1632761.hstgr.cloud/qdrant
 
-## Deployment Notes
-
-Traefik is expected to be running separately with the following configuration:
-- Listening on ports 80 and 443
-- Using Let's Encrypt for SSL certificates
-- Configured with appropriate entrypoints and certificate resolvers
-
-The services in this project automatically register with Traefik through Docker labels.
+Traefik handles SSL termination with Let's Encrypt certificates.

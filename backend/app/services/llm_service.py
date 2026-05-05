@@ -16,12 +16,15 @@ Authentication:
 """
 
 import httpx
+import logging
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class LLMService:
     """
-    Service class for interacting with Ollama Cloud API.
+    Service class for interacting with Ollama API (local or cloud).
 
     This class provides methods for:
     - Generating text completions (generate)
@@ -31,7 +34,7 @@ class LLMService:
     - Health checking the Ollama service
 
     Attributes:
-        base_url: Base URL of the Ollama Cloud API server
+        base_url: Base URL of the Ollama API server
         api_key: API key for Ollama Cloud authentication
         client: httpx AsyncClient for making HTTP requests
     """
@@ -41,12 +44,12 @@ class LLMService:
         Initialize the LLM service.
 
         Args:
-            base_url: Base URL for the Ollama Cloud API.
-                      Defaults to "https://api.ollama.ai" if not provided.
+            base_url: Base URL for the Ollama API.
+                      Defaults to local Ollama if not provided.
             api_key: API key for Ollama Cloud authentication.
-                     Can also be set via OLLAMA_API_KEY environment variable.
+                     Only needed for cloud mode.
         """
-        self.base_url = base_url or "https://api.ollama.ai"
+        self.base_url = base_url or "http://ollama:11434"
         self.api_key = api_key
 
         self.client = httpx.AsyncClient(timeout=60.0)
@@ -174,13 +177,12 @@ class LLMService:
         Useful for similarity search, clustering, and RAG applications.
 
         Args:
-            model: Name of the embedding model to use (e.g., "all-minilm")
+            model: Name of the embedding model to use (e.g., "nomic-embed-text")
             input: Text string or list of text strings to embed
             truncate: If True, truncates input to fit within model's context length
 
         Returns:
             Dict containing:
-            - model: Model name used
             - embeddings: List of embedding vectors (one per input)
 
         API Endpoint: POST /api/embed
@@ -237,3 +239,96 @@ class LLMService:
         Close the HTTP client and release resources.
         """
         await self.client.aclose()
+
+    async def chat_with_tools(
+        self,
+        model: str,
+        messages: list,
+        tools: list,
+        options: Optional[Dict[str, Any]] = None,
+        max_iterations: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Generate a chat completion with tool calling support.
+
+        The model can call tools (search, fetch, api) and the service
+        executes them, feeding results back to the model until complete.
+
+        Args:
+            model: Name of the model to use
+            messages: List of message dicts with 'role' and 'content'
+            tools: List of tool definitions from ToolsService
+            options: Optional model parameters
+            max_iterations: Max number of tool calls (prevents infinite loops)
+
+        Returns:
+            Dict with final response and tool calls made
+
+        API Endpoint: POST /api/chat with tools
+        """
+        from app.services.tools_service import ToolsService
+
+        tools_service = ToolsService()
+        iteration = 0
+
+        current_messages = list(messages)
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            payload = {
+                "model": model,
+                "messages": current_messages,
+                "tools": tools,
+                "stream": False
+            }
+
+            if options:
+                payload["options"] = options
+
+            response = await self.client.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                headers=self._get_headers()
+            )
+
+            try:
+                response.raise_for_status()
+                result = response.json()
+            except Exception as e:
+                logger.error(f"JSON parse error: {e}, response text: {response.text[:500]}")
+                return {
+                    "model": model,
+                    "message": {"role": "assistant", "content": f"Error: {str(e)}"},
+                    "iterations": iteration,
+                    "message_history": current_messages
+                }
+
+            current_messages.append(result.get("message", {}))
+
+            if not result.get("done", True):
+                break
+
+            tool_calls = result.get("message", {}).get("tool_calls", [])
+            if not tool_calls:
+                break
+
+            for tool_call in tool_calls:
+                func = tool_call.get("function", {})
+                tool_name = func.get("name")
+                arguments = func.get("arguments", {})
+
+                tool_result = await tools_service.execute_tool(tool_name, arguments)
+
+                current_messages.append({
+                    "role": "tool",
+                    "content": str(tool_result),
+                    "tool_call_id": tool_call.get("id")
+                })
+
+        return {
+            "model": model,
+            "message": current_messages[-1] if current_messages else {},
+            "iterations": iteration,
+            "message_history": current_messages
+        }

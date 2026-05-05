@@ -21,7 +21,7 @@ Usage:
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from urllib.parse import urlparse
 import uuid
 
@@ -330,3 +330,293 @@ class QdrantService:
             }
         except Exception:
             return None
+
+    def scroll_points(
+        self,
+        collection_name: str,
+        limit: int = 100,
+        offset: Optional[str] = None,
+        with_vectors: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Scroll through points in a collection with pagination.
+
+        Useful for iterating over all points or paginating through results.
+
+        Args:
+            collection_name: Name of the collection
+            limit: Maximum number of points to return (default 100)
+            offset: Point ID to start from (for pagination)
+            with_vectors: If True, includes vectors in response
+
+        Returns:
+            Dict containing:
+            - points: List of points
+            - next_page_offset: ID of next page, or None if done
+
+        Example:
+            result = qdrant.scroll_points("documents", limit=10)
+            for point in result["points"]:
+                print(f"ID: {point.id}")
+            if result["next_page_offset"]:
+                next_page = qdrant.scroll_points(
+                    "documents",
+                    limit=10,
+                    offset=result["next_page_offset"]
+                )
+        """
+        try:
+            results = self.client.scroll(
+                collection_name=collection_name,
+                limit=limit,
+                offset=offset,
+                with_vectors=with_vectors
+            )
+
+            return {
+                "points": [
+                    {
+                        "id": p.id,
+                        "vector": p.vector,
+                        "payload": p.payload,
+                        "score": getattr(p, 'score', None)
+                    }
+                    for p in results.points
+                ],
+                "next_page_offset": results.next_page_offset
+            }
+        except Exception:
+            return {"points": [], "next_page_offset": None}
+
+    def count_points(
+        self,
+        collection_name: str,
+        count_filter: Optional[Dict[str, Any]] = None,
+        exact: bool = True
+    ) -> int:
+        """
+        Count points in a collection.
+
+        Args:
+            collection_name: Name of the collection
+            count_filter: Optional filter conditions
+            exact: If True, returns exact count (slower for large collections)
+
+        Returns:
+            Number of points in the collection.
+
+        Example:
+            count = qdrant.count_points("documents")
+            filtered_count = qdrant.count_points(
+                "documents",
+                count_filter={"payload": {"document_id": "uuid"}}
+            )
+        """
+        try:
+            result = self.client.count(
+                collection_name=collection_name,
+                count_filter=count_filter,
+                exact=exact
+            )
+            return result.count
+        except Exception:
+            return 0
+
+    def get_point(
+        self,
+        collection_name: str,
+        point_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a single point by ID.
+
+        Args:
+            collection_name: Name of the collection
+            point_id: Unique ID of the point to retrieve
+
+        Returns:
+            Dict with point data (id, vector, payload, score) or None if not found.
+
+        Example:
+            point = qdrant.get_point("documents", "point-uuid")
+            if point:
+                print(f"Text: {point['payload']['text']}")
+        """
+        try:
+            results = self.client.retrieve(
+                collection_name=collection_name,
+                ids=[point_id],
+                with_vectors=False
+            )
+            if results:
+                p = results[0]
+                return {
+                    "id": p.id,
+                    "vector": p.vector,
+                    "payload": p.payload
+                }
+            return None
+        except Exception:
+            return None
+
+    def search_batch(
+        self,
+        collection_name: str,
+        query_vectors: List[List[float]],
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+        query_filter: Optional[Dict[str, Any]] = None
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        Search with multiple query vectors at once.
+
+        More efficient than multiple separate searches when you need
+        to search with multiple query vectors.
+
+        Args:
+            collection_name: Name of the collection to search in
+            query_vectors: List of query vectors to search with
+            limit: Maximum number of results per query (default 5)
+            score_threshold: Optional minimum similarity score
+            query_filter: Optional filter conditions
+
+        Returns:
+            List of result lists, one per query vector.
+
+        Example:
+            results = qdrant.search_batch(
+                "documents",
+                query_vectors=[[0.1, 0.2], [0.3, 0.4]],
+                limit=5
+            )
+            for i, result_set in enumerate(results):
+                print(f"Query {i}: {len(result_set)} results")
+        """
+        try:
+            results = self.client.search_batch(
+                collection_name=collection_name,
+                query_vector=query_vectors,
+                limit=limit,
+                score_threshold=score_threshold,
+                query_filter=query_filter
+            )
+
+            return [
+                [
+                    {
+                        "id": r.id,
+                        "score": r.score,
+                        "payload": r.payload
+                    }
+                    for r in result_set
+                ]
+                for result_set in results
+            ]
+        except Exception:
+            return []
+
+    def create_payload_index(
+        self,
+        collection_name: str,
+        field_name: str,
+        field_type: str = "text"
+    ) -> bool:
+        """
+        Create an index on a payload field for faster filtering.
+
+        Indexes significantly speed up filtered searches on specific fields.
+
+        Args:
+            collection_name: Name of the collection
+            field_name: Name of the payload field to index
+            field_type: Type of the field ("text", "integer", "float", "bool", "geo", "datetime")
+
+        Returns:
+            True if index was created successfully, False otherwise.
+
+        Example:
+            qdrant.create_payload_index("documents", "document_id")
+            qdrant.create_payload_index("documents", "chunk_index", "integer")
+        """
+        try:
+            from qdrant_client.models import FieldIndex, PayloadSchemaType
+
+            schema_type_map = {
+                "text": PayloadSchemaType.TEXT,
+                "integer": PayloadSchemaType.INTEGER,
+                "float": PayloadSchemaType.FLOAT,
+                "bool": PayloadSchemaType.BOOL,
+                "geo": PayloadSchemaType.GEO,
+                "datetime": PayloadSchemaType.DATETIME
+            }
+
+            schema_type = schema_type_map.get(field_type, PayloadSchemaType.TEXT)
+
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema=schema_type
+            )
+            return True
+        except Exception:
+            return False
+
+    def recommend(
+        self,
+        collection_name: str,
+        positive_ids: List[str],
+        negative_ids: Optional[List[str]] = None,
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+        with_vectors: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Find similar points using other points as reference (not a query vector).
+
+        Uses the vectors of specified points to find other similar points.
+        Useful for "more like this" style recommendations.
+
+        Args:
+            collection_name: Name of the collection
+            positive_ids: List of point IDs with good characteristics
+            negative_ids: Optional list of point IDs to avoid
+            limit: Maximum number of results (default 5)
+            score_threshold: Optional minimum similarity score
+            with_vectors: If True, includes vectors in results
+
+        Returns:
+            List of result dicts, each containing id, score, and payload.
+
+        Example:
+            results = qdrant.recommend(
+                "documents",
+                positive_ids=["known-good-point-id"],
+                negative_ids=["known-bad-point-id"],
+                limit=5
+            )
+            for r in results:
+                print(f"Similar to: {r['payload']['text'][:50]}")
+        """
+        try:
+            from qdrant_client.models import RecommendStrategy
+
+            results = self.client.recommend(
+                collection_name=collection_name,
+                positive=positive_ids,
+                negative=negative_ids or [],
+                limit=limit,
+                score_threshold=score_threshold,
+                with_vectors=with_vectors,
+                strategy=RecommendStrategy.AVERAGE
+            )
+
+            return [
+                {
+                    "id": r.id,
+                    "score": r.score,
+                    "payload": r.payload
+                }
+                for r in results
+            ]
+        except Exception:
+            return []
