@@ -16,8 +16,13 @@ Health check endpoints are provided for monitoring service availability.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+import os
+import asyncio
+
 from app.core.config import settings
-from app.services.llm_service import LLMService
+from app.core.rate_limit import limiter
 from app.api.v1.health import router as health_router
 from app.api.v1.users import router as users_router
 from app.api.v1.conversations import router as conversations_router
@@ -36,16 +41,9 @@ async def lifespan(app: FastAPI):
 
     Handles resource allocation when the application starts and
     cleanup when it shuts down.
-
-    On shutdown:
-    - Closes the LLM service HTTP client to release connections
     """
     yield
-    # Cleanup: Close the async HTTP client used by LLMService
-    # Import here to avoid circular imports
-    from app.services.llm_service import LLMService
-    llm_service = LLMService(base_url=settings.OLLAMA_HOST)
-    await llm_service.close()
+    await asyncio.sleep(0)
 
 
 app = FastAPI(
@@ -54,20 +52,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # CORS middleware allows the frontend to make requests to this API
-# The frontend runs on a different origin (domain/port) than the API
+allowed_origins = os.environ.get(
+    "CORS_ALLOWED_ORIGINS",
+    "https://www.srv1632761.hstgr.cloud,https://api.srv1632761.hstgr.cloud"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],              # Allow all origins (configure for production)
-    allow_credentials=True,           # Allow cookies and auth headers
-    allow_methods=["*"],              # Allow all HTTP methods
-    allow_headers=["*"],              # Allow all HTTP headers
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
-# Include health check routers from API v1
-# These endpoints verify connectivity to backend services
+# Include routers
 app.include_router(health_router)
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(conversations_router, prefix="/api/v1")
@@ -81,24 +85,10 @@ app.include_router(telegram_router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():
-    """
-    Root endpoint returning a welcome message.
-
-    Returns:
-        Dict with a welcome message for API consumers.
-    """
+    """Root endpoint returning a welcome message."""
     return {"message": "Welcome to the Tower Project API"}
 
 
 if __name__ == "__main__":
-    """
-    Development server runner.
-
-    When running directly with `python main.py`, this starts the
-    FastAPI application using Uvicorn ASGI server on port 8000.
-
-    For production, use Gunicorn or another ASGI server with
-    workers for better performance and reliability.
-    """
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

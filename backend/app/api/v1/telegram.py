@@ -1,16 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
 from typing import Optional
 from uuid import UUID
+import logging
 
 from app.services.telegram_service import TelegramService
 from app.services.user_service import UserService
 from app.models.database import get_db
+from app.core.auth import get_current_user
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 telegram_service = TelegramService()
 user_service = UserService()
+
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 @router.post("/webhook")
@@ -21,15 +27,9 @@ async def telegram_webhook(
 ):
     """
     Receive updates from Telegram.
-
-    This endpoint is called by Telegram when:
-    - A user sends a message to the bot
-    - A user clicks an inline button
-    - etc.
-
-    For verification, Telegram sends a GET request first to check the webhook.
     """
     body = await request.json()
+    logger.info(f"Telegram webhook received: {body.keys()}")
 
     if not telegram_service.verify_webhook(x_telegram_bot_api_secret_token):
         raise HTTPException(
@@ -37,18 +37,17 @@ async def telegram_webhook(
             detail="Invalid secret token"
         )
 
+    callback_query = body.get("callback_query")
     message = body.get("message")
+
+    if callback_query:
+        logger.info(f"Callback query detected: {callback_query.get('data')}")
+        return await handle_callback_query(callback_query, db)
+
     if not message:
         return {"status": "ok"}
 
     chat = message.get("chat")
-    callback_query = body.get("callback_query")
-
-    if callback_query:
-        return await handle_callback_query(callback_query, db)
-
-    if not chat or not message.get("text"):
-        return {"status": "ok"}
 
     chat_id = str(chat["id"])
     text = message["text"]
@@ -80,8 +79,31 @@ async def telegram_webhook(
         await handle_reset_command(chat_id, db)
     elif command == "compress":
         await handle_compress_command(chat_id, db)
+    elif command == "nas":
+        await handle_nas_command(chat_id, args, db)
+    elif command == "ls":
+        await handle_ls_command(chat_id, args, db)
+    elif command == "naslogin":
+        await handle_nas_login_command(chat_id, db)
     else:
-        await handle_text_message(chat_id, text, db)
+        from app.services.synology import SynologyClient, SynologyAuth, FileStation
+        try:
+            client = SynologyClient()
+            auth = SynologyAuth(client)
+            auth.login()
+            fs = FileStation(client)
+            shares = fs.list_shares()
+            share_names = [s['name'].lower() for s in shares.get("data", {}).get("shares", [])]
+
+            if command in share_names:
+                await handle_ls_command(chat_id, f"/{command}", db)
+            elif command.startswith("/") or (args and args.startswith("/")):
+                path = args if args else command
+                await handle_ls_command(chat_id, path, db)
+            else:
+                await handle_text_message(chat_id, text, db)
+        except Exception:
+            await handle_text_message(chat_id, text, db)
 
     return {"status": "ok"}
 
@@ -211,9 +233,10 @@ async def handle_setpref_command(chat_id: str, args: Optional[str], db: Session)
                 "❌ Failed to set preference"
             )
     except Exception as e:
+        logger.error(f"Error setting preference: {e}")
         return await telegram_service.send_message(
             chat_id,
-            f"❌ Error: {str(e)}"
+            "Failed to set preference. Please try again."
         )
 
 
@@ -384,6 +407,116 @@ async def handle_compress_command(chat_id: str, db: Session) -> bool:
         )
 
 
+async def handle_nas_login_command(chat_id: str, db: Session) -> bool:
+    """Handle /naslogin command - connect to Synology NAS."""
+    from app.services.synology import SynologyClient, SynologyAuth
+
+    try:
+        client = SynologyClient()
+        auth = SynologyAuth(client)
+        token = auth.login()
+        await telegram_service.send_message(chat_id, f"✓ Connecté au NAS Synology\nSID: {token[:20]}...")
+        return True
+    except Exception as e:
+        await telegram_service.send_message(chat_id, f"❌ Erreur de connexion: {str(e)}")
+        return True
+
+
+async def handle_nas_command(chat_id: str, args: Optional[str], db: Session) -> bool:
+    """Handle /nas command - list shares on NAS."""
+    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+
+    try:
+        client = SynologyClient()
+        auth = SynologyAuth(client)
+        auth.login()
+
+        fs = FileStation(client)
+        shares = fs.list_shares()
+        share_list = shares.get("data", {}).get("shares", [])
+
+        if not share_list:
+            await telegram_service.send_message(chat_id, "Aucun partage trouvé.")
+            return True
+
+        lines = ["📁 *Partages NAS:*\n"]
+        for s in share_list:
+            lines.append(f"• {s['name']} ({s['path']})")
+
+        await telegram_service.send_message(chat_id, "\n".join(lines))
+        return True
+    except Exception as e:
+        await telegram_service.send_message(chat_id, f"❌ Erreur: {str(e)}")
+        return True
+
+
+async def handle_ls_command(chat_id: str, args: Optional[str], db: Session) -> bool:
+    """Handle /ls command - list files in a NAS folder."""
+    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+
+    if not args:
+        await telegram_service.send_message(chat_id, "Usage: /ls <dossier>\nExemple: /ls /chat")
+        return True
+
+    folder_path = args if args.startswith("/") else f"/{args}"
+
+    try:
+        client = SynologyClient()
+        auth = SynologyAuth(client)
+        auth.login()
+
+        fs = FileStation(client)
+        result = fs.list_folders(folder_path)
+        files = result.get("data", {}).get("files", [])
+
+        if not files:
+            await telegram_service.send_message(chat_id, f"Dossier vide: {folder_path}")
+            return True
+
+        text_lines = [f"📂 *Contenu de {folder_path}:*\n"]
+        keyboard = []
+
+        for f in files[:20]:
+            name = f["name"]
+            if f.get("isdir"):
+                subpath = f"{folder_path}/{name}" if folder_path != "/" else f"/{name}"
+                keyboard.append([{"text": f"📁 {name}", "callback_data": f"/ls {subpath}"}])
+            else:
+                size = f.get("size", 0)
+                if size:
+                    size_str = _format_size(size)
+                    text_lines.append(f"📄 {name} ({size_str})")
+                else:
+                    text_lines.append(f"📄 {name}")
+
+        if len(files) > 20:
+            text_lines.append(f"\n... et {len(files) - 20} autres fichiers")
+
+        if keyboard:
+            reply_markup = {"inline_keyboard": keyboard}
+            await telegram_service.send_message(
+                chat_id,
+                "\n".join(text_lines),
+                reply_markup=reply_markup
+            )
+        else:
+            await telegram_service.send_message(chat_id, "\n".join(text_lines))
+
+        return True
+    except Exception as e:
+        await telegram_service.send_message(chat_id, f"❌ Erreur: {str(e)}")
+        return True
+
+
+def _format_size(size: int) -> str:
+    """Format file size in human readable format."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}PB"
+
+
 async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     """Handle regular text messages - save to DB, send to Ollama, respond via bot."""
     user = user_service.get_by_telegram_chat_id(db, chat_id)
@@ -396,7 +529,7 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     from app.services.conversation_service import ConversationService
     from app.services.message_service import MessageService
-    from app.services.llm_service import LLMService
+    from app.services.llm import ChatService as LLMService
     from app.core.config import settings
     from app.schemas.message import MessageCreate
     from datetime import datetime, timezone
@@ -418,12 +551,16 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     else:
         conversation = conversation_service.get_telegram_conversation(db, user.id)
 
+    if not conversation:
+        conversation = conversation_service.create_telegram_session(db, user.id, str(user.id)[:8])
+
     from app.services.context_service import ContextService, CONTEXT_CONFIG
+
     context_service = ContextService()
 
-    if context_service.should_compress(conversation):
+    if context_service.should_compress(conversation) and False:
         await telegram_service.send_chat_action(chat_id, "typing")
-        context_service.compress_conversation(db, conversation)
+        await context_service.compress_conversation_async(db, conversation)
 
     await telegram_service.send_chat_action(chat_id, "typing")
 
@@ -474,7 +611,20 @@ When answering questions:
         )
         assistant_reply = response.get("message", {}).get("content", "Sorry, I couldn't process that.")
     except Exception as e:
-        assistant_reply = f"Error: {str(e)}"
+        assistant_reply = "I'm thinking... Please try again in a moment."
+        message_data = MessageCreate(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=assistant_reply
+        )
+        message_service.create(
+            db=db,
+            user_id=user.id,
+            message_data=message_data
+        )
+        conversation_service.update_timestamp(db, conversation.id)
+        await telegram_service.send_message(chat_id, assistant_reply)
+        return True
 
     message_data = MessageCreate(
         conversation_id=conversation.id,
@@ -489,8 +639,6 @@ When answering questions:
 
     conversation_service.update_timestamp(db, conversation.id)
 
-    await llm_service.close()
-
     await telegram_service.send_message(chat_id, assistant_reply)
 
     return True
@@ -501,6 +649,14 @@ async def handle_callback_query(callback_query: dict, db: Session) -> dict:
     query_id = callback_query["id"]
     chat_id = str(callback_query["message"]["chat"]["id"])
     data = callback_query.get("data", "")
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Callback query received: data={data}, chat_id={chat_id}")
+
+    if data.startswith("/ls"):
+        await handle_ls_command(chat_id, data[3:].strip(), db)
+        return {"status": "ok"}
 
     if data.startswith("conv_"):
         conversation_id = data[5:]
@@ -525,20 +681,19 @@ async def send_notification_to_user(
     title: str,
     message: str,
     notification_type: str = "info",
+    current_user_id: UUID = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Send a notification to a user via Telegram.
-
-    Args:
-        user_id: UUID of the user to notify
-        title: Notification title
-        message: Notification message
-        notification_type: Type (info, success, warning, error)
-
-    Returns:
-        {"status": "ok", "sent": bool}
+    Requires authentication.
     """
+    if current_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot send notifications to other users"
+        )
+
     user = user_service.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -565,19 +720,12 @@ async def notify_conversation(
     title: str,
     message: str,
     notification_type: str = "info",
+    current_user_id: UUID = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Send a notification to all users in a conversation.
-
-    Args:
-        conversation_id: UUID of the conversation
-        title: Notification title
-        message: Notification message
-        notification_type: Type (info, success, warning, error)
-
-    Returns:
-        {"status": "ok", "notified": int}
+    Requires authentication.
     """
     from app.services.conversation_service import ConversationService
 
@@ -586,6 +734,9 @@ async def notify_conversation(
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if str(conversation.user_id) != str(current_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     count = 0
     for participant in conversation.participants:
@@ -605,16 +756,12 @@ async def notify_conversation(
 @router.post("/setup-webhook")
 async def setup_webhook(
     url: str,
+    current_user_id: UUID = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Set up Telegram webhook.
-
-    Args:
-        url: Full HTTPS URL for the webhook
-
-    Returns:
-        {"status": "ok", "webhook_url": str}
+    Requires authentication.
     """
     from app.core.config import settings
 
@@ -631,12 +778,10 @@ async def setup_webhook(
 
 
 @router.delete("/webhook")
-async def remove_webhook():
+async def remove_webhook(current_user_id: UUID = Depends(get_current_user)):
     """
     Remove Telegram webhook.
-
-    Returns:
-        {"status": "ok"}
+    Requires authentication.
     """
     success = await telegram_service.delete_webhook()
     if not success:
@@ -646,12 +791,10 @@ async def remove_webhook():
 
 
 @router.get("/webhook-info")
-async def get_webhook_info():
+async def get_webhook_info(current_user_id: UUID = Depends(get_current_user)):
     """
     Get current webhook info.
-
-    Returns:
-        Webhook info dict
+    Requires authentication.
     """
     info = await telegram_service.get_webhook_info()
     if not info:
@@ -664,9 +807,7 @@ async def get_webhook_info():
 async def telegram_health():
     """
     Check Telegram bot health.
-
-    Returns:
-        {"status": "ok", "healthy": bool, "bot_info": dict}
+    Public endpoint.
     """
     healthy = await telegram_service.health_check()
     bot_info = await telegram_service.get_me()
@@ -681,28 +822,25 @@ async def telegram_health():
 @router.get("/generate-link-token/{user_id}")
 async def generate_link_token(
     user_id: UUID,
+    current_user_id: UUID = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Generate a link token for a user to connect their Telegram.
-
-    Args:
-        user_id: UUID of the user
-
-    Returns:
-        {"status": "ok", "link_token": str, "link": str}
+    Requires authentication. User can only generate their own token.
     """
-    from app.core.config import settings
+    if current_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot generate tokens for other users"
+        )
 
     user = user_service.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    import hashlib
-    import time
-
-    token_source = f"{user_id}{user.email}{time.time()}"
-    link_token = hashlib.sha256(token_source.encode()).hexdigest()[:32]
+    from app.core.auth import AuthService
+    link_token = AuthService.generate_secure_token(32)
 
     user_service.update_telegram_link_token(db, user_id, link_token)
 

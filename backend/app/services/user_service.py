@@ -3,20 +3,20 @@ from sqlalchemy import or_
 from typing import List, Optional
 from uuid import UUID
 import hashlib
-import bcrypt
 
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
+from app.core.auth import AuthService
 
 
 class UserService:
     @staticmethod
     def _hash_password(password: str) -> str:
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        return AuthService.hash_password(password)
 
     @staticmethod
     def _verify_password(password: str, password_hash: str) -> bool:
-        return bcrypt.checkpw(password.encode(), password_hash.encode())
+        return AuthService.verify_password(password, password_hash)
 
     def get_by_id(self, db: Session, user_id: UUID) -> Optional[User]:
         return db.query(User).filter(User.id == user_id).first()

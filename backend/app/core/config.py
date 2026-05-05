@@ -5,6 +5,7 @@ This module defines application settings using Pydantic Settings,
 which loads configuration from environment variables.
 """
 
+import os
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from typing import Optional
@@ -12,9 +13,10 @@ from typing import Optional
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=".env" if os.path.exists(".env") else None,
         case_sensitive=True,
-        extra="ignore"
+        extra="ignore",
+        env_file_encoding="utf-8"
     )
     """
     Application settings loaded from environment variables.
@@ -47,8 +49,16 @@ class Settings(BaseSettings):
     # Telegram Bot configuration
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_BOT_USERNAME: Optional[str] = None
-    TELEGRAM_SECRET_TOKEN: Optional[str] = "tower_secret_token_change_me"
+    TELEGRAM_SECRET_TOKEN: Optional[str] = None
     TELEGRAM_WEBHOOK_URL: Optional[str] = None
+
+    # JWT configuration for authentication
+    JWT_SECRET: str = "change_me_in_production_with_strong_secret_key"
+
+
+def get_settings() -> "Settings":
+    """Get settings fresh to pick up environment variable changes (useful for testing)."""
+    return Settings()
 
 
 # Global settings instance used throughout the application

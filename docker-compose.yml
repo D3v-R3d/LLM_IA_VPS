@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     container_name: tower_backend
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/tower_db
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/tower_db
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_HOST=http://ollama:11434
+      - JWT_SECRET=${JWT_SECRET}
 
     networks:
       - tower_network
@@ -49,11 +52,16 @@ services:
     environment:
       - POSTGRES_DB=tower_db
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - tower_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   ollama:
     image: ollama/ollama:latest
@@ -63,6 +71,11 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - tower_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   qdrant:
     image: qdrant/qdrant:v1.7.4
@@ -72,21 +85,11 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - tower_network
-
-  adminer:
-    image: adminer:4.8.1
-    container_name: tower_adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    networks:
-      - tower_network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.adminer.rule=Host(`admin.srv1632761.hstgr.cloud`)"
-      - "traefik.http.routers.adminer.entrypoints=websecure"
-      - "traefik.http.routers.adminer.tls.certresolver=letsencrypt"
-      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:

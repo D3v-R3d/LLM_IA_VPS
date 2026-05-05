@@ -4,9 +4,13 @@ from uuid import UUID
 
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentUpdate
+from app.services.base_service import BaseService
 
 
-class DocumentService:
+class DocumentService(BaseService[Document]):
+    def __init__(self):
+        super().__init__(Document)
+
     def get_by_id(self, db: Session, document_id: UUID) -> Optional[Document]:
         return db.query(Document).filter(Document.id == document_id).first()
 

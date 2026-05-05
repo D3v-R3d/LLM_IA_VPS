@@ -13,10 +13,10 @@ Endpoints:
 """
 
 from fastapi import APIRouter
-from app.services.llm_service import LLMService
-from app.services.qdrant_service import QdrantService
+from app.services.llm import ChatService
+from app.services.document.vector_storage import VectorStorageService
 from app.services.database_service import DatabaseService
-from app.services.telegram_service import TelegramService
+from app.services.telegram import MessageSenderService
 from app.core.config import settings
 
 
@@ -25,27 +25,13 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("")
 async def health_check():
-    """
-    General health check endpoint.
-
-    Returns a simple status indicator for load balancers and monitoring systems.
-
-    Returns:
-        Dict with overall health status.
-    """
+    """General health check endpoint."""
     return {"status": "healthy"}
 
 
 @router.get("/database")
 async def health_database():
-    """
-    PostgreSQL database health check.
-
-    Verifies connectivity to the PostgreSQL database.
-
-    Returns:
-        Dict containing status and service name.
-    """
+    """PostgreSQL database health check."""
     db_service = DatabaseService()
     is_healthy = await db_service.health_check()
     return {
@@ -56,16 +42,9 @@ async def health_database():
 
 @router.get("/qdrant")
 async def health_qdrant():
-    """
-    Qdrant vector database health check.
-
-    Verifies connectivity to the Qdrant vector database.
-
-    Returns:
-        Dict containing status and service name.
-    """
-    qdrant_service = QdrantService(url=settings.QDRANT_URL)
-    is_healthy = qdrant_service.health_check()
+    """Qdrant vector database health check."""
+    vector_service = VectorStorageService(url=settings.QDRANT_URL)
+    is_healthy = vector_service.health_check()
     return {
         "status": "healthy" if is_healthy else "unhealthy",
         "service": "qdrant"
@@ -74,15 +53,8 @@ async def health_qdrant():
 
 @router.get("/ollama")
 async def health_ollama():
-    """
-    Ollama Cloud API health check.
-
-    Verifies connectivity to the Ollama Cloud API using the configured API key.
-
-    Returns:
-        Dict containing status, service name, and API URL.
-    """
-    llm_service = LLMService(
+    """Ollama Cloud API health check."""
+    llm_service = ChatService(
         base_url=settings.OLLAMA_HOST,
         api_key=settings.OLLAMA_API_KEY
     )
@@ -97,15 +69,8 @@ async def health_ollama():
 
 @router.get("/telegram")
 async def health_telegram():
-    """
-    Telegram bot health check.
-
-    Verifies connectivity to the Telegram Bot API.
-
-    Returns:
-        Dict containing status, service name, and bot info.
-    """
-    telegram_service = TelegramService()
+    """Telegram bot health check."""
+    telegram_service = MessageSenderService()
     is_healthy = await telegram_service.health_check()
     bot_info = await telegram_service.get_me()
     return {

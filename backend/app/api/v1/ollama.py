@@ -1,49 +1,34 @@
 from fastapi import APIRouter, HTTPException
-from app.services.llm_service import LLMService
+from app.services.llm import ChatService as LLMService, EmbeddingService
 from app.core.config import settings
 
 
-router = APIRouter(prefix="/health", tags=["health"])
+router = APIRouter(prefix="/ollama", tags=["ollama"])
 
 
-@router.get("/ollama")
-async def health_ollama():
-    llm_service = LLMService(base_url=settings.OLLAMA_HOST)
-    is_healthy = await llm_service.health_check()
-    await llm_service.close()
-    return {
-        "status": "healthy" if is_healthy else "unhealthy",
-        "service": "ollama",
-        "url": settings.OLLAMA_HOST
-    }
-
-
-@router.get("/ollama/models")
+@router.get("/models")
 async def list_ollama_models():
-    llm_service = LLMService(base_url=settings.OLLAMA_HOST)
+    embedding_service = EmbeddingService(base_url=settings.OLLAMA_HOST)
     try:
-        result = await llm_service.list_models()
-        await llm_service.close()
+        models = await embedding_service.list_models()
+        await embedding_service.close()
         return {
             "status": "healthy",
             "service": "ollama",
             "url": settings.OLLAMA_HOST,
-            "models": result.get("models", [])
+            "models": models
         }
     except Exception as e:
-        await llm_service.close()
+        await embedding_service.close()
         raise HTTPException(status_code=503, detail=f"Ollama API error: {str(e)}")
 
 
-@router.get("/ollama/test-embed")
+@router.get("/test-embed")
 async def test_embedding():
-    llm_service = LLMService(base_url=settings.OLLAMA_HOST)
+    embedding_service = EmbeddingService(base_url=settings.OLLAMA_HOST)
     try:
-        result = await llm_service.embed(
-            model="nomic-embed-text",
-            input="This is a test sentence."
-        )
-        await llm_service.close()
+        result = await embedding_service.embed("This is a test sentence.")
+        await embedding_service.close()
         embeddings = result.get("embeddings", [])
         return {
             "status": "healthy",
@@ -53,22 +38,25 @@ async def test_embedding():
             "embeddings_count": len(embeddings)
         }
     except Exception as e:
-        await llm_service.close()
+        await embedding_service.close()
         raise HTTPException(status_code=503, detail=f"Embedding error: {str(e)}")
 
 
-@router.get("/ollama/chat-models")
+@router.get("/chat-models")
 async def list_chat_models():
-    llm_service = LLMService(base_url=settings.OLLAMA_CLOUD_HOST, api_key=settings.OLLAMA_API_KEY)
+    import httpx
     try:
-        result = await llm_service.list_models()
-        await llm_service.close()
-        return {
-            "status": "healthy",
-            "service": "ollama-cloud",
-            "url": settings.OLLAMA_CLOUD_HOST,
-            "models": result.get("models", [])
-        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{settings.OLLAMA_CLOUD_HOST}/api/tags",
+                headers={"Authorization": f"Bearer {settings.OLLAMA_API_KEY}"}
+            )
+            result = response.json()
+            return {
+                "status": "healthy",
+                "service": "ollama-cloud",
+                "url": settings.OLLAMA_CLOUD_HOST,
+                "models": result.get("models", [])
+            }
     except Exception as e:
-        await llm_service.close()
         raise HTTPException(status_code=503, detail=f"Ollama Cloud API error: {str(e)}")

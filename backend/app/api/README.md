@@ -1,64 +1,66 @@
 # API Routes
 
-This directory contains API route definitions.
+This directory contains API route definitions organized by version.
 
 ## Structure
 
 ```
 api/
 ├── v1/               # API version 1
-│   ├── api.py        # API router
-│   ├── routes/       # Individual route handlers
+│   ├── chat.py       # Chat completions
+│   ├── ollama.py     # Ollama health and models
+│   ├── embeddings.py # Document embedding and search
+│   ├── documents.py  # Document CRUD
+│   ├── messages.py   # Message operations
+│   ├── conversations.py # Conversation CRUD
+│   ├── users.py      # User management
+│   ├── telegram.py   # Telegram bot webhook
+│   ├── health.py     # Health check endpoints
 │   └── README.md
+├── __init__.py
 └── README.md
 ```
 
-## Health Check Endpoints
+## Health Check Endpoints (`/health`)
 
-The main application (`app/main.py`) provides the following health check endpoints:
-
-### Main Health Check
-```
-GET /health
-```
-Returns overall application health status.
-
-### Service Health Checks
-```
-GET /health/database
-GET /health/qdrant
-GET /health/ollama
-```
-Returns health status for each external service:
-- `database`: PostgreSQL database
-- `qdrant`: Qdrant vector database
-- `ollama`: Ollama Cloud API
-
-### Response Format
-
-```json
-{
-  "status": "healthy" | "unhealthy",
-  "service": "service_name"
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | General API health |
+| `/health/database` | GET | PostgreSQL connectivity |
+| `/health/qdrant` | GET | Qdrant vector DB connectivity |
+| `/health/ollama` | GET | Ollama Cloud API connectivity |
+| `/health/telegram` | GET | Telegram bot connectivity |
 
 ## Route Organization
 
-Routes are organized by resource (when implemented):
-- `chat.py`: Chat-related endpoints
-- `documents.py`: Document management endpoints
-- `embeddings.py`: Embedding generation and search endpoints
+Routes are organized by resource:
+- **chat.py**: Chat completions (Ollama Cloud)
+- **documents.py**: Document management
+- **embeddings.py**: Embedding generation and search
+- **messages.py**: Message CRUD
+- **conversations.py**: Conversation CRUD
+- **users.py**: User registration, login, profile
+- **telegram.py**: Telegram bot webhook handler
+- **ollama.py**: Ollama local server health and models
 
-## Implementation
+## Authentication
 
-Each route handler:
-1. Validates input using Pydantic schemas
-2. Calls appropriate service functions
-3. Returns properly formatted responses
-4. Handles errors appropriately
+All endpoints except `/users/register`, `/users/login`, and `/health/*` require JWT authentication:
 
-## API Versioning
+```
+Authorization: Bearer <token>
+```
 
-API routes are versioned to allow for backward compatibility:
-- `v1/`: First version of the API
+## Rate Limiting
+
+- `/chat` endpoint: 30 requests per minute
+
+## Error Responses
+
+```json
+{
+  "detail": "Error message"
+}
+```
+
+Standard HTTP status codes: 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found), 422 (Validation Error), 429 (Rate Limited)

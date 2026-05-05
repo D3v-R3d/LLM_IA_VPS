@@ -61,6 +61,19 @@ class ContextService:
         keep_last: Optional[int] = None
     ) -> Optional[str]:
         """
+        Compress conversation by summarizing old messages (sync wrapper).
+        Use compress_conversation_async for async contexts.
+        """
+        import asyncio
+        return asyncio.run(self.compress_conversation_async(db, conversation, keep_last))
+
+    async def compress_conversation_async(
+        self,
+        db: Session,
+        conversation,
+        keep_last: Optional[int] = None
+    ) -> Optional[str]:
+        """
         Compress conversation by summarizing old messages.
 
         Keeps the last N messages and summarizes the rest into a single
@@ -75,9 +88,8 @@ class ContextService:
             Summary text if compression was performed, None otherwise
         """
         from app.services.message_service import MessageService
-        from app.services.llm_service import LLMService
+        from app.services.llm import ChatService
         from app.core.config import settings
-        import asyncio
 
         if keep_last is None:
             keep_last = CONTEXT_CONFIG["keep_last_messages"]
@@ -107,23 +119,20 @@ Conversation to summarize:
 
 Provide a concise summary in 2-3 sentences max."""
 
-        async def generate_summary():
-            llm = LLMService(
-                base_url=settings.OLLAMA_CLOUD_HOST,
-                api_key=settings.OLLAMA_API_KEY
+        llm = ChatService(
+            base_url=settings.OLLAMA_CLOUD_HOST,
+            api_key=settings.OLLAMA_API_KEY
+        )
+        try:
+            response = await llm.chat(
+                model="minimax-m2.7",
+                messages=[{"role": "user", "content": summary_prompt}]
             )
-            try:
-                response = await llm.chat(
-                    model="minimax-m2.7",
-                    messages=[{"role": "user", "content": summary_prompt}]
-                )
-                await llm.close()
-                return response.get("message", {}).get("content", "")
-            except Exception as e:
-                await llm.close()
-                return f"Previous context: {len(messages_to_summarize)} messages about various topics."
-
-        summary = asyncio.run(generate_summary())
+            summary = response.get("message", {}).get("content", "")
+        except Exception:
+            summary = f"Previous context: {len(messages_to_summarize)} messages about various topics."
+        finally:
+            await llm.close()
 
         message_service = MessageService()
 
@@ -132,20 +141,6 @@ Provide a concise summary in 2-3 sentences max."""
                 message_service.delete(db, msg.id)
             except Exception:
                 pass
-
-        compressed_summary = f"[Previous context summarized: {summary}]"
-
-        from app.schemas.message import MessageCreate
-        message_service.create(
-            db=db,
-            conversation_id=conversation.id,
-            user_id=conversation.user_id,
-            message_data=MessageCreate(
-                conversation_id=conversation.id,
-                role="system",
-                content=compressed_summary
-            )
-        )
 
         return summary
 

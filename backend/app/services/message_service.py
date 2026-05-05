@@ -1,13 +1,16 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
 
 from app.models.message import Message, MessageRole
 from app.schemas.message import MessageCreate, MessageUpdate
+from app.services.base_service import BaseService
 
 
-class MessageService:
+class MessageService(BaseService[Message]):
+    def __init__(self):
+        super().__init__(Message)
+
     def get_by_id(self, db: Session, message_id: UUID) -> Optional[Message]:
         return db.query(Message).filter(Message.id == message_id).first()
 

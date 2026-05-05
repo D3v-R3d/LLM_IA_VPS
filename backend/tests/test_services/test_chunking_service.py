@@ -1,5 +1,5 @@
 import pytest
-from app.services.chunking_service import ChunkingService
+from app.services.document.chunking import ChunkingService
 
 
 class TestChunkingService:
