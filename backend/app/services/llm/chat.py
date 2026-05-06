@@ -147,11 +147,15 @@ class ChatService:
                     tool_name = func.get("name")
                     arguments = func.get("arguments", {})
 
-                    tool_result = await tools_service.execute_tool(tool_name, arguments)
+                    result = await tools_service.execute_tool(tool_name, arguments)
+                    if not result.get("success") and "Unknown tool" in str(result.get("error", "")):
+                        from app.services.agent_tools import get_registry
+                        registry = get_registry()
+                        result = await registry.execute(tool_name, **arguments)
 
                     current_messages.append({
                         "role": "tool",
-                        "content": str(tool_result),
+                        "content": str(result),
                         "tool_call_id": tool_call.get("id")
                     })
 

@@ -134,6 +134,10 @@ class TelegramService:
         """Check Telegram API connectivity."""
         return await self.sender.health_check()
 
+    async def set_my_commands(self, commands: list) -> bool:
+        """Set bot command menu."""
+        return await self.sender.set_my_commands(commands)
+
     async def answer_callback_query(
         self,
         callback_query_id: str,
@@ -176,14 +180,17 @@ class TelegramService:
         """Send help message."""
         text = (
             "*Tower Bot Help*\n\n"
-            "*NAS Commands:*\n"
+            "*AI Commands (via chat):*\n"
+            "Ask me anything! I have access to:\n"
+            "• Web search & fetch URLs\n"
+            "• NAS file browsing\n"
+            "• Database queries\n"
+            "• File operations (read, write, edit)\n"
+            "• System commands (bash, docker, git)\n\n"
+            "*Direct Commands:*\n"
             "/nas - List all shared folders on NAS\n"
             "/ls <folder> - List files in folder\n"
-            "  Examples:\n"
-            "  /ls /chat\n"
-            "  /ls /Storage\n"
-            "/naslogin - Connect to Synology NAS\n\n"
-            "*Account Commands:*\n"
+            "/naslogin - Connect to Synology NAS\n"
             "/status - Check connection status\n"
             "/link <email> - Link your account\n"
             "/unlink - Unlink your account\n"
@@ -195,5 +202,6 @@ class TelegramService:
             "/setpref key=value - Set preference\n\n"
             "*Messaging:*\n"
             "Just type your message to chat with Tower!\n"
+            "Example: \"list my nas folders\" or \"search web for python\"\n"
         )
         return await self.send_message(chat_id, text)

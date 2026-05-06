@@ -204,3 +204,16 @@ class MessageSenderService:
             return bot_info is not None and bot_info.get("is_bot", False)
         except Exception:
             return False
+
+    async def set_my_commands(self, commands: list) -> bool:
+        """Set bot command menu."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.api_url}/setMyCommands",
+                    json={"commands": commands}
+                )
+                return response.status_code == 200 and response.json().get("ok", False)
+        except Exception as e:
+            logger.error(f"Failed to set commands: {e}")
+            return False

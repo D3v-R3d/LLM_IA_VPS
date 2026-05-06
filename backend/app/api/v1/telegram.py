@@ -566,8 +566,12 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     ]
 
     from app.services.tools_service import ToolsService
+    from app.services.agent_tools import get_tool_definitions
+    
     tools_service = ToolsService()
-    tools = tools_service.get_tools()
+    web_tools = tools_service.get_tools()
+    agent_tools = get_tool_definitions()
+    tools = web_tools + agent_tools
 
     pref_text = ""
     if prefs:
@@ -577,24 +581,27 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     system_message = {
         "role": "system",
-        "content": f"""You are a helpful assistant with web access and NAS file browsing.{pref_text}
-You have access to a Synology NAS with these tools:
-- nas_list_share: List all shared folders on NAS
-- nas_list_folder: List contents of a folder on NAS (path: e.g. /chat)
-- nas_search: Search for files on NAS
-When user asks to list folders or files, ALWAYS use the NAS tools.
-When answering questions:
-1. Use search_and_fetch for current info - do NOT guess
-2. For NAS questions, use nas_list_share or nas_list_folder
-3. Remember user preferences and apply them
-4. Always prefer searching over guessing."""
+        "content": f"""You are a helpful assistant.
+
+WEB TOOLS: search_web, fetch_url, call_api, search_and_fetch
+NAS TOOLS: nas_list_share, nas_list_folder, nas_search
+SYSTEM TOOLS: read_file, write_file, edit_file, glob, grep, ls, bash, docker, git, pkill
+DB TOOLS: postgres_query, postgres_list_tables, postgres_describe_table
+TELEGRAM TOOLS: telegram_send_message, telegram_send_notification, telegram_get_user_info, telegram_bot_health
+
+User preferences:{pref_text}
+CRITICAL RULES:
+- NEVER invent, embellish, or hallucinate any data, facts, names, numbers, or information not returned by tools.
+- When using tools, return ONLY actual data. Do NOT add rows, columns, values, statistics, or details that were not in the tool result.
+- If data is missing or you are unsure, say so clearly instead of making up information.
+- Use tools when needed. Do NOT make up tool names."""
     }
 
     messages_with_system = [system_message] + messages_history
 
     try:
         response = await llm_service.chat_with_tools(
-            model="minimax-m2.7",
+            model="qwen3.5:397b-cloud",
             messages=messages_with_system,
             tools=tools
         )
@@ -814,6 +821,30 @@ async def telegram_health():
         "healthy": healthy,
         "bot_info": bot_info
     }
+
+
+@router.post("/set-commands")
+async def set_telegram_commands():
+    """
+    Set bot command menu.
+    Updates the bot's command list in Telegram.
+    """
+    commands = [
+        {"command": "nas", "description": "List NAS shares"},
+        {"command": "ls", "description": "List NAS folder contents"},
+        {"command": "status", "description": "Check account status"},
+        {"command": "link", "description": "Link your account"},
+        {"command": "unlink", "description": "Unlink your account"},
+        {"command": "new", "description": "Start new session"},
+        {"command": "reset", "description": "Clear conversation"},
+        {"command": "compress", "description": "Summarize conversation"},
+        {"command": "sessions", "description": "List your sessions"},
+        {"command": "prefs", "description": "Show preferences"},
+        {"command": "help", "description": "Show help"},
+    ]
+    
+    success = await telegram_service.set_my_commands(commands)
+    return {"status": "ok", "commands_set": success}
 
 
 @router.get("/generate-link-token/{user_id}")

@@ -7,7 +7,7 @@ Uses services from app.services.tools subfolder.
 
 from typing import List, Dict, Any
 from app.services.tools import WebSearchService, URLFetchService, APICallerService
-from app.services.synology import SynologyClient, FileStation
+from app.services.synology import SynologyClient, SynologyAuth, FileStation
 
 
 class ToolsService:
