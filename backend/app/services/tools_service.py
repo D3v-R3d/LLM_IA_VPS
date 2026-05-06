@@ -22,11 +22,8 @@ class ToolsService:
         self.web_search = WebSearchService()
         self.url_fetch = URLFetchService()
         self.api_caller = APICallerService()
-        client = SynologyClient()
-        from app.services.synology import SynologyAuth
-        auth = SynologyAuth(client)
-        auth.login()
-        self.nas = FileStation(client)
+        self._nas_client = None
+        self._nas_auth = None
 
     def get_tools(self) -> List[Dict[str, Any]]:
         """Get tool definitions for LLM function calling."""
@@ -174,10 +171,25 @@ class ToolsService:
                 query=arguments.get("query", "")
             )
         elif tool_name == "nas_list_share":
+            if not self._nas_client:
+                self._nas_client = SynologyClient()
+                self._nas_auth = SynologyAuth(self._nas_client)
+                self._nas_auth.login()
+                self.nas = FileStation(self._nas_client)
             return self.nas.list_shares()
         elif tool_name == "nas_list_folder":
+            if not self._nas_client:
+                self._nas_client = SynologyClient()
+                self._nas_auth = SynologyAuth(self._nas_client)
+                self._nas_auth.login()
+                self.nas = FileStation(self._nas_client)
             return self.nas.list_folders(folder_path=arguments.get("folder_path", "/"))
         elif tool_name == "nas_search":
+            if not self._nas_client:
+                self._nas_client = SynologyClient()
+                self._nas_auth = SynologyAuth(self._nas_client)
+                self._nas_auth.login()
+                self.nas = FileStation(self._nas_client)
             return self.nas.search(folder_path=arguments.get("folder_path", "/"), keyword=arguments.get("keyword", ""))
         else:
             return {

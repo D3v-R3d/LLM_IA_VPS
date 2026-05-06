@@ -60,7 +60,6 @@ class MessageSenderService:
                 payload = {
                     "chat_id": chat_id,
                     "text": text,
-                    "parse_mode": parse_mode,
                     "disable_web_page_preview": disable_web_page_preview,
                     "disable_notification": disable_notification,
                 }
@@ -78,7 +77,7 @@ class MessageSenderService:
                     data = response.json()
                     return data.get("ok", False)
                 else:
-                    logger.error(f"Telegram API error: {response.status_code}")
+                    logger.error(f"Telegram API error: {response.status_code} - {response.text}")
                     return False
 
         except Exception as e:

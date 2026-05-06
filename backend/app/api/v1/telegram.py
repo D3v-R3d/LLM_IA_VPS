@@ -86,24 +86,7 @@ async def telegram_webhook(
     elif command == "naslogin":
         await handle_nas_login_command(chat_id, db)
     else:
-        from app.services.synology import SynologyClient, SynologyAuth, FileStation
-        try:
-            client = SynologyClient()
-            auth = SynologyAuth(client)
-            auth.login()
-            fs = FileStation(client)
-            shares = fs.list_shares()
-            share_names = [s['name'].lower() for s in shares.get("data", {}).get("shares", [])]
-
-            if command in share_names:
-                await handle_ls_command(chat_id, f"/{command}", db)
-            elif command.startswith("/") or (args and args.startswith("/")):
-                path = args if args else command
-                await handle_ls_command(chat_id, path, db)
-            else:
-                await handle_text_message(chat_id, text, db)
-        except Exception:
-            await handle_text_message(chat_id, text, db)
+        await handle_text_message(chat_id, text, db)
 
     return {"status": "ok"}
 
@@ -519,6 +502,8 @@ def _format_size(size: int) -> str:
 
 async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     """Handle regular text messages - save to DB, send to Ollama, respond via bot."""
+    import sys
+    print(f"HANDLE_TEXT_START: chat_id={chat_id}, text={text}", flush=True)
     user = user_service.get_by_telegram_chat_id(db, chat_id)
     if not user:
         await telegram_service.send_message(
@@ -592,13 +577,17 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     system_message = {
         "role": "system",
-        "content": f"""You are a helpful assistant with web access.{pref_text}
+        "content": f"""You are a helpful assistant with web access and NAS file browsing.{pref_text}
+You have access to a Synology NAS with these tools:
+- nas_list_share: List all shared folders on NAS
+- nas_list_folder: List contents of a folder on NAS (path: e.g. /chat)
+- nas_search: Search for files on NAS
+When user asks to list folders or files, ALWAYS use the NAS tools.
 When answering questions:
 1. Use search_and_fetch for current info - do NOT guess
-2. For dates, search first
-3. If info seems outdated, warn the user
-4. Remember user preferences and apply them
-5. Always prefer searching over guessing."""
+2. For NAS questions, use nas_list_share or nas_list_folder
+3. Remember user preferences and apply them
+4. Always prefer searching over guessing."""
     }
 
     messages_with_system = [system_message] + messages_history
@@ -639,7 +628,15 @@ When answering questions:
 
     conversation_service.update_timestamp(db, conversation.id)
 
-    await telegram_service.send_message(chat_id, assistant_reply)
+    print(f"HANDLE_TEXT_END: chat_id={chat_id}, sending reply", flush=True)
+    try:
+        result = await telegram_service.send_message(chat_id, assistant_reply)
+        print(f"SEND_RESULT: {result}", flush=True)
+    except Exception as e:
+        print(f"SEND_ERROR: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+    print(f"HANDLE_TEXT_SUCCESS: chat_id={chat_id}", flush=True)
 
     return True
 
