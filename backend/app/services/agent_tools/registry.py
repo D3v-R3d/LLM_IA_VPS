@@ -46,6 +46,7 @@ class ToolRegistry:
             TelegramSendMessageTool, TelegramSendNotificationTool,
             TelegramGetUserInfoTool, TelegramBotHealthTool
         )
+        from app.services.agent_tools.tools.user_notes_tool import UserNotesTool
 
         tools = [
             ReadTool(),
@@ -68,6 +69,7 @@ class ToolRegistry:
             TelegramSendNotificationTool(),
             TelegramGetUserInfoTool(),
             TelegramBotHealthTool(),
+            UserNotesTool(),
         ]
 
         for tool in tools:

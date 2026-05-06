@@ -25,7 +25,7 @@ class LLMBaseClient:
         """
         self.base_url = base_url
         self.api_key = api_key
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = httpx.AsyncClient(timeout=180.0)
 
     def _get_headers(self) -> Dict[str, str]:
         """

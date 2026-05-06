@@ -89,81 +89,43 @@ class ChatService:
         max_iterations: int = 10
     ) -> Dict[str, Any]:
         """
-        Generate chat completion with tool calling.
-
-        Model can call tools and results are fed back to the model.
+        Generate chat completion with tool calling (single call, no auto-execution).
 
         Args:
             model: Model name with tool support
             messages: Message history
             tools: Tool definitions
             options: Optional model parameters
-            max_iterations: Max tool call iterations
+            max_iterations: Max tool call iterations (ignored, single call)
 
         Returns:
-            Final response and message history
+            LLM response with tool_calls if any
         """
-        from app.services.tools import ToolsService
-
-        tools_service = ToolsService()
         client = LLMBaseClient(self.base_url, self.api_key)
 
-        iteration = 0
-        current_messages = list(messages)
-
         try:
-            while iteration < max_iterations:
-                iteration += 1
+            payload = {
+                "model": model,
+                "messages": messages,
+                "tools": tools,
+                "stream": False
+            }
 
-                payload = {
-                    "model": model,
-                    "messages": current_messages,
-                    "tools": tools,
-                    "stream": False
-                }
+            if options:
+                payload["options"] = options
 
-                if options:
-                    payload["options"] = options
-
-                response = await client.client.post(
-                    f"{client.base_url}/api/chat",
-                    json=payload,
-                    headers=client._get_headers()
-                )
-                response.raise_for_status()
-                result = response.json()
-
-                current_messages.append(result.get("message", {}))
-
-                if not result.get("done", True):
-                    break
-
-                tool_calls = result.get("message", {}).get("tool_calls", [])
-                if not tool_calls:
-                    break
-
-                for tool_call in tool_calls:
-                    func = tool_call.get("function", {})
-                    tool_name = func.get("name")
-                    arguments = func.get("arguments", {})
-
-                    result = await tools_service.execute_tool(tool_name, arguments)
-                    if not result.get("success") and "Unknown tool" in str(result.get("error", "")):
-                        from app.services.agent_tools import get_registry
-                        registry = get_registry()
-                        result = await registry.execute(tool_name, **arguments)
-
-                    current_messages.append({
-                        "role": "tool",
-                        "content": str(result),
-                        "tool_call_id": tool_call.get("id")
-                    })
+            response = await client.client.post(
+                f"{client.base_url}/api/chat",
+                json=payload,
+                headers=client._get_headers()
+            )
+            response.raise_for_status()
+            result = response.json()
 
             return {
                 "model": model,
-                "message": current_messages[-1] if current_messages else {},
-                "iterations": iteration,
-                "message_history": current_messages
+                "message": result.get("message", {}),
+                "done": result.get("done", True)
             }
         finally:
             await client.close()
