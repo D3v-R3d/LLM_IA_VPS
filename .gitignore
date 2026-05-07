@@ -118,3 +118,4 @@ Thumbs.dbsecrets/
 *.log
 __pycache__/
 *.pyc
+/secrets/

@@ -1,10 +1,9 @@
 """
 Web Tools - WebFetch, WebSearch, APIFetch
 
-Tools for web operations.
+Tools for web operations using services from app.services.agent_tools.tools.
 """
 
-import httpx
 from typing import Optional, Dict, Any
 
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
@@ -33,20 +32,14 @@ class WebFetchTool(BaseTool):
         }
 
     async def execute(self, **kwargs) -> ToolResult:
+        from app.services.agent_tools.tools.url_fetch import URLFetchService
         url = kwargs.get("url")
         max_length = kwargs.get("max_length", 4000)
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, follow_redirects=True)
-                response.raise_for_status()
-                content = response.text[:max_length]
-                return ToolResult(success=True, data={
-                    "url": str(response.url),
-                    "status": response.status_code,
-                    "content": content,
-                    "content_type": response.headers.get("content-type", "")
-                })
+            service = URLFetchService()
+            result = await service.fetch(url, max_length)
+            return ToolResult(success=result.get("success", False), data=result)
         except Exception as e:
             return ToolResult(success=False, error=str(e))
 
@@ -74,7 +67,7 @@ class WebSearchTool(BaseTool):
         }
 
     async def execute(self, **kwargs) -> ToolResult:
-        from app.services.tools.web_search import WebSearchService
+        from app.services.agent_tools.tools.web_search import WebSearchService
         query = kwargs.get("query")
         num_results = kwargs.get("num_results", 5)
 
@@ -111,23 +104,15 @@ class APIFetchTool(BaseTool):
         }
 
     async def execute(self, **kwargs) -> ToolResult:
+        from app.services.agent_tools.tools.api_caller import APICallerService
         url = kwargs.get("url")
         method = kwargs.get("method", "GET").upper()
         headers = kwargs.get("headers", {})
         body = kwargs.get("body")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    json=body if body else None
-                )
-                response.raise_for_status()
-                return ToolResult(success=True, data={
-                    "status": response.status_code,
-                    "body": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
-                })
+            service = APICallerService()
+            result = await service.call(url, method, headers, body)
+            return ToolResult(success=result.get("success", False), data=result)
         except Exception as e:
             return ToolResult(success=False, error=str(e))

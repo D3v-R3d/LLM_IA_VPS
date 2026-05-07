@@ -7,6 +7,7 @@ Modular services for document processing:
 - Chunking for embeddings
 - Vector storage in Qdrant
 - OCR for images
+- Scraping and data pipeline
 
 Usage:
     from app.services.document import (
@@ -14,7 +15,9 @@ Usage:
         TextCleaningService,
         ChunkingService,
         VectorStorageService,
-        OCRService
+        OCRService,
+        ScrapingService,
+        DataPipelineService
     )
 """
 
@@ -23,11 +26,15 @@ from app.services.document.text_cleaning import TextCleaningService
 from app.services.document.chunking import ChunkingService
 from app.services.document.vector_storage import VectorStorageService
 from app.services.document.ocr import OCRService
+from app.services.document.scraping import ScrapingService
+from app.services.document.pipeline import DataPipelineService
 
 __all__ = [
     "TextExtractionService",
     "TextCleaningService",
     "ChunkingService",
     "VectorStorageService",
-    "OCRService"
+    "OCRService",
+    "ScrapingService",
+    "DataPipelineService"
 ]

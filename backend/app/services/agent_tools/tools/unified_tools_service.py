@@ -6,9 +6,9 @@ Orchestrates web search, URL fetch, and API calls.
 """
 
 from typing import List, Dict, Any
-from app.services.tools.web_search import WebSearchService
-from app.services.tools.url_fetch import URLFetchService
-from app.services.tools.api_caller import APICallerService
+from app.services.agent_tools.tools.web_search import WebSearchService
+from app.services.agent_tools.tools.url_fetch import URLFetchService
+from app.services.agent_tools.tools.api_caller import APICallerService
 from app.services.synology import SynologyClient, SynologyAuth, FileStation
 
 

@@ -47,11 +47,7 @@ class DockerTool(SyncTool):
             method = "GET"
 
             if command.startswith("ps"):
-                path = "/containers/json"
-                params = "all=1"
-                if "ps -a" in command or "ps --all" in command:
-                    params = "all=true"
-                path = f"{path}?{params}"
+                path = "/containers/json?all=1"
             elif command.startswith("images"):
                 path = "/images/json"
             elif command.startswith("logs"):
@@ -71,7 +67,7 @@ class DockerTool(SyncTool):
             elif command.startswith("version"):
                 path = "/version"
             else:
-                path = "/containers/json?all=true"
+                path = "/containers/json?all=1"
 
             request = f"{method} {path} HTTP/1.1\r\nHost: localhost\r\n\r\n"
             sock.send(request.encode())
@@ -96,7 +92,7 @@ class DockerTool(SyncTool):
                 if body.startswith(b"0\r\n") or body.startswith(b"0"):
                     body = body.split(b"\r\n", 1)[1] if b"\r\n" in body else body
                     body = body.split(b"\r\n", 1)[1] if b"\r\n" in body else body
-                decoded = body.decode("utf-8", errors="replace")
+                decoded = self._decode_chunked(body)
                 return ToolResult(success=True, data={"response": decoded[:40000]})
             else:
                 return ToolResult(success=True, data={"raw_response": response.decode("utf-8", errors="replace")[:40000]})
@@ -105,6 +101,30 @@ class DockerTool(SyncTool):
             return ToolResult(success=False, error=f"Docker command timed out after {timeout}s")
         except Exception as e:
             return ToolResult(success=False, error=str(e))
+
+    def _decode_chunked(self, body: bytes) -> str:
+        """Decode HTTP chunked transfer encoding."""
+        try:
+            if b"\r\n" not in body:
+                return body.decode("utf-8", errors="replace")
+            result = b""
+            while body:
+                line, body = body.split(b"\r\n", 1)
+                if not line:
+                    break
+                try:
+                    chunk_size = int(line, 16)
+                except ValueError:
+                    break
+                if chunk_size == 0:
+                    break
+                result += body[:chunk_size]
+                body = body[chunk_size:]
+                if body.startswith(b"\r\n"):
+                    body = body[2:]
+            return result.decode("utf-8", errors="replace")
+        except Exception:
+            return body.decode("utf-8", errors="replace")
 
 
 class BashTool(SyncTool):

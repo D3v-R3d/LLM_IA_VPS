@@ -1,65 +1,125 @@
 """
-Agent Service
+Production Agent Service - Refactored Architecture
 
-Handles agent loop with iterative tool calls and user notifications.
+Uses isolated components:
+- CoreAgentLoop: Minimal deterministic core
+- ToolExecutor: Independent tool execution
+- Side systems: Budget, Convergence, Notifications (external)
 """
 
 import asyncio
 import logging
-import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
+from uuid import UUID
 
 from app.services.tools_service import ToolsService
 from app.services.agent_tools import get_registry
 from app.services.llm import ChatService
 from app.core.config import settings
 
+from app.services.agent_core import (
+    CoreAgentLoop,
+    ToolExecutor,
+    TelegramNotifier,
+    BudgetManager,
+    ConvergenceAnalyzer,
+    MetricsCollector,
+)
+from app.services.user_service import UserService
+
 logger = logging.getLogger(__name__)
+
+user_service = UserService()
+
+
+# Default budgets per tool type
+DEFAULT_BUDGETS = {
+    "web_search": 3,
+    "api_fetch": 5,
+    "web_fetch": 5,
+    "read_file": 10,
+    "write_file": 3,
+    "edit_file": 3,
+    "bash": 10,
+    "postgres_query": 5,
+    "scrape_and_store": 3,
+    "search_stored_content": 5,
+    "telegram_send_message": 3,
+    "telegram_send_notification": 3,
+    "glob": 5,
+    "grep": 5,
+    "ls": 10,
+    "docker": 5,
+    "git": 2,
+    "pkill": 1,
+    "user_write_notes": 3,
+    "postgres_list_tables": 3,
+    "postgres_describe_table": 3,
+    "telegram_bot_health": 3,
+    "telegram_get_user_info": 3,
+}
 
 
 class AgentService:
     """
-    Agent service that handles iterative tool calling with user notifications.
+    Refactored Agent Service.
 
-    Flow:
-    1. LLM decides to call tools
-    2. Execute each tool and notify user via Telegram
-    3. Check stop conditions with heuristics
-    4. When done, return final response
+    Architecture:
+    - CoreAgentLoop: Pure loop (LLM → Execute → Context)
+    - ToolExecutor: Independent tool execution
+    - Side systems: BudgetManager, ConvergenceAnalyzer, TelegramNotifier
+
+    All external systems are called BEFORE or AFTER the loop,
+    NEVER inside the critical path.
     """
 
     def __init__(
         self,
         telegram_service=None,
-        max_iterations: int = 10,
+        max_iterations: int = 6,
         max_result_preview: int = 200,
         empty_response_threshold: int = 2,
-        convergence_threshold: int = 3,
-        tool_timeout: int = 60
+        convergence_threshold: int = 2,
+        tool_timeout: int = 30,
+        error_threshold: int = 3,
+        max_context_tool_chars: int = 1200,
     ):
-        """
-        Initialize agent service.
-
-        Args:
-            telegram_service: Telegram service for notifications (optional)
-            max_iterations: Max tool call iterations
-            max_result_preview: Max chars to send to user per result
-            empty_response_threshold: Consecutive empty responses before stop
-            convergence_threshold: Similar results before stop
-            tool_timeout: Max seconds to wait for tool execution
-        """
         self.telegram_service = telegram_service
         self.max_iterations = max_iterations
         self.max_result_preview = max_result_preview
         self.empty_response_threshold = empty_response_threshold
         self.convergence_threshold = convergence_threshold
         self.tool_timeout = tool_timeout
+        self.error_threshold = error_threshold
+        self.max_context_tool_chars = max_context_tool_chars
+
+        # Initialize core components
         self.tools_service = ToolsService()
         self.registry = get_registry()
         self.llm = ChatService(
             base_url=settings.OLLAMA_CLOUD_HOST,
             api_key=settings.OLLAMA_API_KEY
         )
+
+        # Initialize tool executor
+        self.tool_executor = ToolExecutor(
+            tools_service=self.tools_service,
+            registry=self.registry,
+            default_timeout=self.tool_timeout,
+        )
+
+        # Initialize side systems
+        self.budget_manager = BudgetManager(DEFAULT_BUDGETS.copy())
+        self.convergence_analyzer = ConvergenceAnalyzer(
+            threshold=convergence_threshold
+        )
+        self.metrics = MetricsCollector()
+
+        # Telegram notifier (async worker)
+        self.telegram_notifier = TelegramNotifier(
+            telegram_service=telegram_service,
+            semaphore_limit=5,
+        ) if telegram_service else None
 
     async def run_agent_loop(
         self,
@@ -68,350 +128,262 @@ class AgentService:
         messages_history: List[Dict],
         system_prompt: str,
         tools: List[Dict],
-        user_id: str = None
+        user_id: Optional[str] = None
     ) -> str:
-        """
-        Run agent loop with notifications.
+        """Main entry point for agent execution."""
 
-        Args:
-            user_message: The user's message
-            chat_id: Telegram chat ID for notifications
-            messages_history: Conversation history
-            system_prompt: System prompt to use
-            tools: Tool definitions for LLM
-            user_id: User ID for preferences
+        # Start telegram notifier worker
+        if self.telegram_notifier:
+            await self.telegram_notifier.start()
 
-        Returns:
-            Final response to send to user
-        """
-        context = [{"role": "system", "content": system_prompt}]
+        # Get user's preferred model (if any)
+        model = settings.OLLAMA_MODEL
+        if user_id:
+            model = self._get_user_model(user_id) or model
+
+        logger.info(
+            f"AGENT_START: chat_id={chat_id} | "
+            f"history_len={len(messages_history)} | tools={len(tools)}"
+        )
+
+        # PRE-EXECUTION: Apply budget filtering to tools
+        # (This modifies the available tools list, not the tool_calls)
+        available_tools = self._filter_tools_by_budget(tools)
+        logger.info(f"AGENT: tools_available={len(available_tools)}/{len(tools)}")
+
+        try:
+            # Run core loop
+            answer, state = await self._run_core_loop(
+                user_message=user_message,
+                messages_history=messages_history,
+                system_prompt=system_prompt,
+                tools=available_tools,
+                chat_id=chat_id,
+                model=model,
+            )
+
+            # Log final state
+            logger.info(
+                f"AGENT_STOP: chat_id={chat_id} | "
+                f"iterations={state['iterations']} | "
+                f"tools_completed={len(state['completed_tools'])}"
+            )
+
+            return answer
+
+        finally:
+            # Cleanup
+            if self.telegram_notifier:
+                await self.telegram_notifier.stop()
+            await self.close()
+
+    def _get_user_model(self, user_id: str, db=None) -> Optional[str]:
+        """Get user's preferred model from user service."""
+        try:
+            if db is None:
+                from app.models.database import get_db
+                db_gen = get_db()
+                db = next(db_gen)
+            prefs = user_service.get_preferences(db, UUID(user_id))
+            return prefs.get("model")
+        except Exception:
+            return None
+
+    async def _run_core_loop(
+        self,
+        user_message: str,
+        messages_history: List[Dict],
+        system_prompt: str,
+        tools: List[Dict],
+        chat_id: str,
+        model: Optional[str] = None,
+    ) -> tuple[str, Dict]:
+        """Run the minimal core loop with pre/post hooks."""
+
+        context = [
+            {"role": "system", "content": system_prompt}
+        ]
         context.extend(messages_history[-20:])
         context.append({"role": "user", "content": user_message})
 
-        print(f"AGENT: Starting loop, context_len={len(context)}, tools={len(tools)}", flush=True)
+        state = {
+            "iterations": 0,
+            "tool_history": [],
+            "completed_tools": [],
+            "failed_tools": [],
+        }
 
-        iteration = 0
-        consecutive_empty = 0
-        previous_result_hash = None
-        similar_results_count = 0
+        for iteration in range(1, self.max_iterations + 1):
+            state["iterations"] = iteration
 
-        while iteration < self.max_iterations:
-            iteration += 1
-            print(f"AGENT: Iteration {iteration}", flush=True)
-
-            response = await self.llm.chat_with_tools(
-                model=settings.OLLAMA_MODEL,
+            # 1. LLM CALL
+            response = await self._safe_llm_call(
+                model=model or settings.OLLAMA_MODEL,
                 messages=context,
                 tools=tools
             )
-            print(f"AGENT: LLM response received", flush=True)
+
+            if response is None:
+                return "Service indisponible. Réessayez.", state
 
             message = response.get("message", {})
             tool_calls = message.get("tool_calls", [])
             content = message.get("content", "")
 
-            if tool_calls:
-                consecutive_empty = 0
-                similar_results_count = 0
+            context.append({
+                "role": "assistant",
+                "content": content or "",
+                "tool_calls": tool_calls
+            })
 
-                for tool_call in tool_calls:
-                    func = tool_call.get("function", {})
-                    tool_name = func.get("name")
-                    arguments = func.get("arguments", {})
+            logger.info(
+                f"AGENT_ITERATION: iter={iteration} | "
+                f"tools={len(tool_calls)} | content={len(content or '')}"
+            )
 
-                    result = await self._execute_tool(tool_name, arguments)
+            # 2. STOP IF NO TOOLS (final answer)
+            if not tool_calls:
+                if content and content.strip():
+                    return content.strip(), state
+                continue
 
-                    if self.telegram_service:
-                        await self._notify_result(chat_id, tool_name, result)
+            # 3. APPLY BUDGET CHECKING BEFORE EXECUTION
+            filtered_calls = self.budget_manager.check(tool_calls)
 
-                    context.append({
-                        "role": "tool",
-                        "content": str(result),
-                        "tool_call_id": tool_call.get("id")
-                    })
-
-                previous_result_hash = self._hash_result(result)
-            else:
-                stop_reason = self._determine_stop_reason(
-                    content=content,
-                    iteration=iteration,
-                    consecutive_empty=consecutive_empty,
-                    previous_result_hash=previous_result_hash,
-                    similar_count=similar_results_count
+            if len(filtered_calls) < len(tool_calls):
+                logger.warning(
+                    f"BUDGET_FILTERED: {len(tool_calls) - len(filtered_calls)} tools"
                 )
 
-                if stop_reason:
-                    print(f"AGENT: Stopping - {stop_reason}", flush=True)
-                    return self._format_final_response(content, iteration)
+            # 4. EXECUTE TOOLS
+            results = await self.tool_executor.execute_batch(filtered_calls)
 
-                if content:
-                    return content
+            # 5. POST-EXECUTION: Process results
+            for tc, result in zip(filtered_calls, results):
+                tool_name = tc.get("function", {}).get("name")
+                state["tool_history"].append(tool_name)
 
-                consecutive_empty += 1
-                print(f"AGENT: Empty response #{consecutive_empty}", flush=True)
-                if consecutive_empty >= self.empty_response_threshold:
-                    print(f"AGENT: Too many empty responses, stopping", flush=True)
-                    return "Here's what I found."
+                if isinstance(result, dict) and result.get("success"):
+                    state["completed_tools"].append(tool_name)
+                else:
+                    state["failed_tools"].append(tool_name)
 
-        print(f"AGENT: max iterations reached, returning fallback", flush=True)
-        return "Here's what I found."
+                summarized = self._summarize_tool_result(result)
+                context.append({
+                    "role": "tool",
+                    "content": summarized,
+                    "tool_call_id": tc.get("id")
+                })
 
-    def _determine_stop_reason(
-        self,
-        content: str,
-        iteration: int,
-        consecutive_empty: int,
-        previous_result_hash: Optional[int],
-        similar_count: int
-    ) -> Optional[str]:
-        """
-        Determine if loop should stop based on heuristics.
+                # Queue notification (non-blocking)
+                if self.telegram_notifier:
+                    await self.telegram_notifier.notify(
+                        chat_id, tool_name, result
+                    )
 
-        Returns:
-            Stop reason string if should stop, None otherwise
-        """
-        if self._is_completion_signal(content):
-            return "completion_signal"
+            # 6. TRIM CONTEXT (single point)
+            if len(context) > 30:
+                context[:] = context[-30:]
 
-        if consecutive_empty >= self.empty_response_threshold:
-            return f"empty_responses_{consecutive_empty}"
+            # 7. POST-EXECUTION: Check convergence
+            if self.convergence_analyzer.analyze(
+                state["tool_history"],
+                results
+            ):
+                logger.info("CONVERGENCE_DETECTED: stopping")
+                return self._format_final_response(state), state
 
-        if iteration >= self.max_iterations:
-            return "max_iterations"
+            # 8. POST-EXECUTION: Check error threshold
+            if len(state["failed_tools"]) >= self.error_threshold:
+                logger.warning(f"ERROR_THRESHOLD: {len(state['failed_tools'])}")
+                return "Trop d'erreurs pendant l'exécution.", state
 
-        return None
+        return "Max iterations reached.", state
 
-    def _is_completion_signal(self, content: str) -> bool:
-        """
-        Detect if content indicates the task is complete.
+    def _filter_tools_by_budget(self, tools: List[Dict]) -> List[Dict]:
+        """Filter tools that have exhausted budgets."""
+        if not self.budget_manager._budgets:
+            return tools
 
-        Heuristic patterns:
-        - Direct answers with specific info
-        - Summary phrases
-        - Conclusion markers
-        """
-        if not content or len(content.strip()) < 10:
-            return False
+        filtered = []
+        for tool in tools:
+            name = tool.get("function", {}).get("name")
+            if name in self.budget_manager._budgets:
+                if self.budget_manager._budgets[name] > 0:
+                    filtered.append(tool)
+                # Skip exhausted budget tools
+            else:
+                filtered.append(tool)
+        return filtered
 
-        content_lower = content.lower().strip()
-
-        completion_patterns = [
-            r"^(here'?s?|the answer is|answer:|summary:|in summary)",
-            r"^(i (can'?t|don'?t) know|i'?m not sure|i cannot)",
-            r"(that'?s all|that was|this should|this will help)",
-            r"^(no (further|more) |no additional)",
-        ]
-
-        for pattern in completion_patterns:
-            if re.match(pattern, content_lower):
-                return True
-
-        if len(content) > 100 and any(marker in content_lower for marker in [
-            "here's what", "based on the", "according to", "the result",
-            "the information", "as shown", "as you can see"
-        ]):
-            return True
-
-        return False
-
-    def _is_new_information(self, new_result: Any, previous_results: List[str]) -> bool:
-        """
-        Detect if new result contains genuinely new information.
-
-        Args:
-            new_result: The new tool result
-            previous_results: List of previous result strings
-
-        Returns:
-            True if result contains new info, False if redundant
-        """
-        new_str = str(new_result).lower()
-
-        stop_words = [
-            "error", "failed", "unknown tool", "not found",
-            "permission denied", "connection refused"
-        ]
-        if any(word in new_str for word in stop_words):
-            return True
-
-        for prev in previous_results[-3:]:
-            prev_lower = prev.lower()
-
-            if new_str == prev_lower:
-                return False
-
-            similarity = self._calculate_text_similarity(new_str, prev_lower)
-            if similarity > 0.85:
-                return False
-
-        return True
-
-    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
-        """
-        Calculate simple similarity between two texts.
-
-        Returns:
-            Float between 0 and 1 where 1 is identical
-        """
-        if text1 == text2:
-            return 1.0
-
-        words1 = set(text1.split())
-        words2 = set(text2.split())
-
-        if not words1 or not words2:
-            return 0.0
-
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
-
-        return len(intersection) / len(union) if union else 0.0
-
-    def _hash_result(self, result: Any) -> int:
-        """
-        Create a simple hash of a result for convergence detection.
-        """
-        result_str = str(result).lower()
-        return sum(ord(c) for c in result_str if c.isalnum()) % 10000
-
-    def _format_final_response(self, content: str, iterations: int) -> str:
-        """
-        Format the final response before returning.
-
-        Args:
-            content: The content to format
-            iterations: Number of iterations used
-
-        Returns:
-            Formatted response string
-        """
-        stripped = content.strip() if content else ""
-        if stripped:
-            return stripped
-
-        if iterations > 5:
-            return f"Task completed after {iterations} steps."
-
-        return "Here's what I found."
-
-    async def _execute_tool(self, tool_name: str, arguments: Dict) -> Any:
-        """Execute a tool using ToolsService or Agent registry."""
+    async def _safe_llm_call(self, model: str, **kwargs):
+        """LLM call with single retry on timeout."""
         try:
-            result = await asyncio.wait_for(
-                self.tools_service.execute_tool(tool_name, arguments),
-                timeout=self.tool_timeout
+            return await asyncio.wait_for(
+                self.llm.chat_with_tools(model=model, **kwargs),
+                timeout=60
             )
-            if not (isinstance(result, dict) and "Unknown tool" in str(result.get("error", ""))):
-                return result
         except asyncio.TimeoutError:
-            return {"success": False, "error": f"Tool '{tool_name}' timed out after {self.tool_timeout}s"}
-        except Exception:
-            pass
-
-        try:
-            result = await asyncio.wait_for(
-                self.registry.execute(tool_name, **arguments),
-                timeout=self.tool_timeout
-            )
-            return {
-                "success": result.success,
-                "data": result.data,
-                "error": result.error
-            }
-        except asyncio.TimeoutError:
-            return {"success": False, "error": f"Tool '{tool_name}' timed out after {self.tool_timeout}s"}
+            logger.warning("LLM timeout, retrying...")
+            try:
+                return await asyncio.wait_for(
+                    self.llm.chat_with_tools(model=model, **kwargs),
+                    timeout=60
+                )
+            except asyncio.TimeoutError:
+                logger.error("LLM timeout after 2 attempts")
+                return None
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            logger.warning(f"LLM error with model {model}: {e}")
+            # Fallback to default model on error
+            if model != settings.OLLAMA_MODEL:
+                logger.info(f"Falling back to default model {settings.OLLAMA_MODEL}")
+                try:
+                    return await asyncio.wait_for(
+                        self.llm.chat_with_tools(
+                            model=settings.OLLAMA_MODEL,
+                            **kwargs
+                        ),
+                        timeout=60
+                    )
+                except Exception:
+                    return None
+            return None
 
-    async def _notify_result(self, chat_id: str, tool_name: str, result: Any) -> None:
-        """Send tool result notification to user."""
-        if not self.telegram_service:
-            return
-
-        if isinstance(result, dict):
-            success = result.get("success", False)
-            error = result.get("error")
-            data = result.get("data")
+    def _summarize_tool_result(self, result: Any) -> str:
+        """Lightweight result summarization."""
+        import re
+        from app.services.agent_tools.tools.base_tool import ToolResult
+        if isinstance(result, ToolResult):
+            if result.error:
+                text = f"Error: {result.error}"
+            elif result.data:
+                if isinstance(result.data, dict):
+                    if "stdout" in result.data:
+                        text = result.data["stdout"]
+                    elif "response" in result.data:
+                        text = result.data["response"]
+                    else:
+                        text = str(result.data)
+                else:
+                    text = str(result.data)
+            else:
+                text = "Done"
         else:
-            success = getattr(result, 'success', False)
-            error = getattr(result, 'error', None)
-            data = getattr(result, 'data', None)
+            text = str(result)
 
-        if error:
-            await self.telegram_service.send_message(
-                chat_id,
-                f"❌ {tool_name}: {str(error)[:self.max_result_preview]}"
-            )
-        elif data is not None:
-            preview = str(data)[:self.max_result_preview]
-            if len(str(data)) > self.max_result_preview:
-                preview += "..."
-            await self.telegram_service.send_message(
-                chat_id,
-                f"✓ {tool_name}: {preview}"
-            )
-        else:
-            await self.telegram_service.send_message(
-                chat_id,
-                f"✓ {tool_name}: Done"
-            )
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > self.max_context_tool_chars:
+            text = text[:self.max_context_tool_chars] + "... [truncated]"
+        return text
 
-    async def _should_continue_loop(self, context: List[Dict], iteration: int) -> bool:
-        """Ask LLM if more tools are needed."""
-        if iteration >= self.max_iterations:
-            return False
-
-        try:
-            eval_message = {
-                "role": "user",
-                "content": "Based on the tool results above, can you answer the user's original question? "
-                          "Answer YES if you have all the information needed, NO if you need more tools."
-            }
-
-            eval_context = list(context) + [eval_message]
-
-            response = await self.llm.chat(
-                model=settings.OLLAMA_MODEL,
-                messages=eval_context,
-                options={"temperature": 0.1}
-            )
-
-            content = response.get("message", {}).get("content", "").upper()
-
-            if "NO" in content and "YES" not in content:
-                return True
-
-            return False
-
-        except Exception as e:
-            logger.error(f"Evaluation error: {e}")
-            return False
-
-    async def _generate_summary(self, context: List[Dict], original_question: str) -> str:
-        """Generate final summary from tool results."""
-        try:
-            summary_message = {
-                "role": "user",
-                "content": f"User asked: '{original_question}'\n\n"
-                           f"The tool results have been collected. "
-                           f"Provide a clear, concise summary of the findings. "
-                           f"IMPORTANT: Do not invent data - only use what the tools returned."
-            }
-
-            summary_context = list(context) + [summary_message]
-
-            response = await self.llm.chat(
-                model=settings.OLLAMA_MODEL,
-                messages=summary_context,
-                options={"temperature": 0.3}
-            )
-
-            return response.get("message", {}).get("content", "Here's what I found...")
-
-        except Exception as e:
-            logger.error(f"Summary error: {e}")
-            return "Here's what I found from the tools."
+    def _format_final_response(self, state: Dict) -> str:
+        """Format final response from state."""
+        known = state.get("completed_tools", [])
+        if known:
+            return f"Résultats après {state['iterations']} étapes: {', '.join(known[-5:])}"
+        return "Je n'ai pas pu terminer la tâche."
 
     async def close(self):
-        """Close LLM client."""
+        """Cleanup resources."""
         await self.llm.close()

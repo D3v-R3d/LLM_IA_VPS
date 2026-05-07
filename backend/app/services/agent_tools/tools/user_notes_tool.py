@@ -1,13 +1,12 @@
 """
-User Notes Tool - Write notes to user-configured file
+User Notes Tool - Write notes to the prompt inject folder
 
-Tool for writing notes to a file path configured via user preferences.
-Folder: /home/projects/tower_project/prompt (or user preference 'prompt_folder')
-File: user's preference 'prompt_filename' or default 'notes.md'
+Always writes to {PROMPT_DIR}/inject/notes.md
 """
 
 import os
 from datetime import datetime
+from app.core.config import settings
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
 
 
@@ -20,7 +19,7 @@ class UserNotesTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Write notes to /home/projects/tower_project/prompt/notes.md"
+        return "Write notes to notes.md in the prompt inject folder"
 
     @property
     def parameters(self) -> dict:
@@ -34,9 +33,9 @@ class UserNotesTool(BaseTool):
 
     async def execute(self, **kwargs) -> ToolResult:
         content = kwargs.get("content", "")
-        
-        file_path = "/home/projects/tower_project/prompt/notes.md"
-        
+
+        file_path = os.path.join(settings.PROMPT_DIR, "inject", "notes.md")
+
         try:
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             timestamp = datetime.now().isoformat()

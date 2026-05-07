@@ -1,35 +1,65 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 import logging
 import asyncio
 import os
 
-from app.services.telegram_service import TelegramService
+from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
+
+from app.services.telegram_service import get_cached_telegram_service, TelegramService
 from app.services.user_service import UserService
+from app.services.conversation_service import ConversationService
+from app.services.prompt_service import PromptService
 from app.models.database import get_db
 from app.core.auth import get_current_user
 from app.core.rate_limit import limiter
+from app.core.config import settings
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from app.models.user import User
 from fastapi import Request as FRequest
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
-telegram_service = TelegramService()
+telegram_service = get_cached_telegram_service()
 user_service = UserService()
 
 logger = logging.getLogger(__name__)
+
+
+def _get_conversation_service() -> ConversationService:
+    """Get cached ConversationService instance."""
+    return ConversationService()
 
 _conversation_locks: dict[str, asyncio.Lock] = {}
 _lock_cleanup_interval = 300
 _lock_cleanup_task = None
 
-_prompt_cache: dict[str, str] = {}
-_prompt_cache_loaded = False
-
 _rate_limit_per_chat: dict[str, float] = {}
-_rate_limit_window = 60
-_rate_limit_max = 30
+_rate_limit_window = 5
+_rate_limit_max = 10
+
+
+def _check_user_linked(db: Session, chat_id: str) -> Optional["User"]:
+    """Check if user is linked, return User or None."""
+    return user_service.get_by_telegram_chat_id(db, chat_id)
+
+
+async def _require_linked_account(
+    chat_id: str,
+    db: Session,
+    action: str = "This action"
+) -> tuple[bool, Optional["User"]]:
+    """Check if user is linked, send message if not. Returns (is_linked, user)."""
+    user = _check_user_linked(db, chat_id)
+    if not user:
+        await telegram_service.send_message(
+            chat_id,
+            f"❌ {action} requires linking your account first.\n\nUse /link <email> to link your Tower account."
+        )
+        return False, None
+    return True, user
 
 
 class _LockWithTimestamp(asyncio.Lock):
@@ -79,7 +109,6 @@ def start_lock_cleanup():
 
 
 @router.post("/webhook")
-@limiter.limit(os.environ.get("TELEGRAM_RATE_LIMIT", "30/minute"))
 async def telegram_webhook(
     request: FRequest,
     x_telegram_bot_api_secret_token: Optional[str] = Header(None, alias="X-Telegram-Bot-Api-Secret-Token"),
@@ -89,7 +118,7 @@ async def telegram_webhook(
     Receive updates from Telegram.
     """
     body = await request.json()
-    logger.info(f"Telegram webhook received: {body.keys()}")
+    logger.warning(f"Telegram webhook received: {body.keys()}, update_id={body.get('update_id', 'N/A')}")
 
     if not telegram_service.verify_webhook(x_telegram_bot_api_secret_token):
         raise HTTPException(
@@ -118,15 +147,19 @@ async def telegram_webhook(
     last_request = _rate_limit_per_chat.get(chat_id, 0)
     if current_time - last_request < _rate_limit_window:
         if last_request > 0:
-            logger.info(f"Chat {chat_id} rate limited")
+            logger.warning(f"Chat {chat_id} rate limited (within {_rate_limit_window}s window)")
             return {"status": "ok", "rate_limited": True}
     _rate_limit_per_chat[chat_id] = current_time
 
+    logger.info(f"Webhook accepting chat_id={chat_id}, text={text[:50]}")
+
     lock = await _get_conversation_lock(chat_id)
     if lock.locked():
-        logger.info(f"Chat {chat_id} is already processing, acknowledging duplicate")
+        logger.warning(f"Chat {chat_id} is already processing (lock held)")
         await telegram_service.send_message(chat_id, "⏳ Je traite votre message précédent...")
         return {"status": "ok", "queued": True}
+
+    logger.info(f"Acquiring lock for chat_id={chat_id}")
 
     async with lock:
         command, args = telegram_service.parse_command(text)
@@ -169,8 +202,12 @@ async def telegram_webhook(
             await handle_ls_command(chat_id, args, db)
         elif command == "naslogin":
             await handle_nas_login_command(chat_id, db)
+        elif command == "model" or command == "models":
+            await handle_model_command(chat_id, args, db, telegram_service)
         else:
+            logger.info(f"Calling handle_text_message for chat_id={chat_id}")
             await handle_text_message(chat_id, text, db)
+            logger.info(f"handle_text_message completed for chat_id={chat_id}")
 
     return {"status": "ok"}
 
@@ -273,12 +310,9 @@ async def handle_unlink_command(chat_id: str, db: Session) -> bool:
 
 async def handle_setpref_command(chat_id: str, args: Optional[str], db: Session) -> bool:
     """Handle /setpref key=value command."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
+    is_linked, user = await _require_linked_account(chat_id, db, "Setting preferences")
+    if not is_linked:
+        return False
 
     if not args or "=" not in args:
         return await telegram_service.send_message(
@@ -320,12 +354,9 @@ async def handle_setpref_command(chat_id: str, args: Optional[str], db: Session)
 
 async def handle_prefs_command(chat_id: str, db: Session) -> bool:
     """Handle /prefs command - show user preferences."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
+    is_linked, user = await _require_linked_account(chat_id, db, "Viewing preferences")
+    if not is_linked:
+        return False
 
     prefs = user_service.get_preferences(db, user.id)
 
@@ -347,15 +378,10 @@ async def handle_prefs_command(chat_id: str, db: Session) -> bool:
 
 async def handle_sessions_command(chat_id: str, db: Session) -> bool:
     """Handle /sessions command - list all sessions."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
-
-    from app.services.conversation_service import ConversationService
-    conversation_service = ConversationService()
+    is_linked, user = await _require_linked_account(chat_id, db, "Viewing sessions")
+    if not is_linked:
+        return False
+    conversation_service = _get_conversation_service()
 
     sessions = conversation_service.get_all_telegram_sessions(db, user.id)
     prefs = user_service.get_preferences(db, user.id)
@@ -375,19 +401,15 @@ async def handle_sessions_command(chat_id: str, db: Session) -> bool:
 
 async def handle_new_command(chat_id: str, args: Optional[str], db: Session) -> bool:
     """Handle /new command - start a new session."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
+    is_linked, user = await _require_linked_account(chat_id, db, "Creating a new session")
+    if not is_linked:
+        return False
 
     import uuid
     session_id = str(uuid.uuid4())
     title = args.strip() if args and args.strip() else f"Session {session_id[:8]}"
 
-    from app.services.conversation_service import ConversationService
-    conversation_service = ConversationService()
+    conversation_service = _get_conversation_service()
 
     conversation = conversation_service.create_telegram_session(db, user.id, session_id, title)
     user_service.set_preference(db, user.id, "current_session", session_id)
@@ -402,19 +424,15 @@ async def handle_new_command(chat_id: str, args: Optional[str], db: Session) -> 
 
 async def handle_reset_command(chat_id: str, db: Session) -> bool:
     """Handle /reset command - clear current session and start fresh."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
+    is_linked, user = await _require_linked_account(chat_id, db, "Resetting session")
+    if not is_linked:
+        return False
 
     prefs = user_service.get_preferences(db, user.id)
     current_session = prefs.get("current_session")
 
     if current_session:
-        from app.services.conversation_service import ConversationService
-        conversation_service = ConversationService()
+        conversation_service = _get_conversation_service()
         conv = conversation_service.get_telegram_session(db, user.id, current_session)
         if conv:
             from app.services.message_service import MessageService
@@ -434,19 +452,15 @@ async def handle_reset_command(chat_id: str, db: Session) -> bool:
 
 async def handle_compress_command(chat_id: str, db: Session) -> bool:
     """Handle /compress command - summarize and compress conversation history."""
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        return await telegram_service.send_message(
-            chat_id,
-            "❌ Please link your account first using /link <email>"
-        )
+    is_linked, user = await _require_linked_account(chat_id, db, "Compressing session")
+    if not is_linked:
+        return False
 
     prefs = user_service.get_preferences(db, user.id)
     current_session = prefs.get("current_session")
 
     if current_session:
-        from app.services.conversation_service import ConversationService
-        conversation_service = ConversationService()
+        conversation_service = _get_conversation_service()
         conversation = conversation_service.get_telegram_session(db, user.id, current_session)
     else:
         conversation = conversation_service.get_telegram_conversation(db, user.id)
@@ -467,7 +481,7 @@ async def handle_compress_command(chat_id: str, db: Session) -> bool:
 
     await telegram_service.send_chat_action(chat_id, "typing")
 
-    summary = conversation_service.compress_conversation(db, conversation.id, keep_last=15)
+    summary = await conversation_service.compress_conversation(db, conversation.id, keep_last=15)
 
     new_count = conversation_service.get_token_count(conversation)
 
@@ -500,17 +514,69 @@ async def handle_nas_login_command(chat_id: str, db: Session) -> bool:
         return True
 
 
+async def handle_model_command(
+    chat_id: str, args: Optional[str], db: Session, telegram_service: TelegramService
+) -> bool:
+    """Handle /model command - list or switch models via inline buttons."""
+    from app.services.agent_tools.tools.model_switch_tool import ModelSwitchTool
+
+    tool = ModelSwitchTool()
+
+    if not args or args == "list":
+        available = await tool._fetch_available_models()
+
+        keyboard = []
+        for m in available:
+            callback_data = f"model_switch:{m['id']}"
+            keyboard.append([{"text": f"✅ {m['name']}", "callback_data": callback_data}])
+
+        reply_markup = {"inline_keyboard": keyboard}
+        await telegram_service.send_message(
+            chat_id,
+            "## 🤖 Select a model:\n\nTap to switch instantly:",
+            reply_markup=reply_markup
+        )
+        return True
+
+    if args.startswith("switch "):
+        model_id = args[7:].strip()
+        available = await tool._fetch_available_models()
+        available_ids = [m["id"] for m in available]
+        if model_id not in available_ids:
+            await telegram_service.send_message(
+                chat_id,
+                f"❌ Model `{model_id}` not available.\n\nUse /model list to see available models."
+            )
+            return True
+
+        is_linked, user = await _require_linked_account(chat_id, db, "Setting model preference")
+        if not is_linked:
+            return True
+
+        success = user_service.set_preference(db, user.id, "model", model_id)
+        if success:
+            await telegram_service.send_message(
+                chat_id,
+                f"✓ Model switched to `{model_id}`\nThis will be used for your next messages."
+            )
+        else:
+            await telegram_service.send_message(chat_id, "❌ Failed to save preference.")
+        return True
+
+    await telegram_service.send_message(
+        chat_id,
+        "Usage:\n/model list - Show available models\n/model switch <model_id> - Switch model\n\nExample: /model switch qwen3.5:32b"
+    )
+    return True
+
+
 async def handle_nas_command(chat_id: str, args: Optional[str], db: Session) -> bool:
     """Handle /nas command - list shares on NAS."""
-    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+    from app.services.tools_service import _get_cached_nas
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        auth.login()
-
-        fs = FileStation(client)
-        shares = fs.list_shares()
+        nas = _get_cached_nas()
+        shares = nas.list_shares()
         share_list = shares.get("data", {}).get("shares", [])
 
         if not share_list:
@@ -530,7 +596,7 @@ async def handle_nas_command(chat_id: str, args: Optional[str], db: Session) -> 
 
 async def handle_ls_command(chat_id: str, args: Optional[str], db: Session) -> bool:
     """Handle /ls command - list files in a NAS folder."""
-    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+    from app.services.tools_service import _get_cached_nas
 
     if not args:
         await telegram_service.send_message(chat_id, "Usage: /ls <dossier>\nExemple: /ls /chat")
@@ -539,12 +605,8 @@ async def handle_ls_command(chat_id: str, args: Optional[str], db: Session) -> b
     folder_path = args if args.startswith("/") else f"/{args}"
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        auth.login()
-
-        fs = FileStation(client)
-        result = fs.list_folders(folder_path)
+        nas = _get_cached_nas()
+        result = nas.list_folders(folder_path)
         files = result.get("data", {}).get("files", [])
 
         if not files:
@@ -597,21 +659,15 @@ def _format_size(size: int) -> str:
 
 async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     """Handle regular text messages - save to DB, send to Ollama, respond via bot."""
-    import sys
-    print(f"HANDLE_TEXT_START: chat_id={chat_id}, text={text}", flush=True)
-    user = user_service.get_by_telegram_chat_id(db, chat_id)
-    if not user:
-        await telegram_service.send_message(
-            chat_id,
-            "Please link your account first using /link <email>"
-        )
+    logger.warning(f"HANDLE_TEXT_START: chat_id={chat_id}, text={text[:100]}")
+    is_linked, user = await _require_linked_account(chat_id, db, "Chatting")
+    if not is_linked:
         return False
 
-    from app.services.conversation_service import ConversationService
     from app.services.message_service import MessageService
     from app.schemas.message import MessageCreate
 
-    conversation_service = ConversationService()
+    conversation_service = _get_conversation_service()
     message_service = MessageService()
 
     prefs = user_service.get_preferences(db, user.id)
@@ -661,83 +717,24 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     agent_tools = get_tool_definitions()
     tools = web_tools + agent_tools
 
-    global _prompt_cache, _prompt_cache_loaded
-    if not _prompt_cache_loaded:
-        prompt_folder = "/home/projects/tower_project/prompt"
-        try:
-            for filename in os.listdir(prompt_folder):
-                if filename.endswith(".md") and filename != "context_summary.md":
-                    filepath = os.path.join(prompt_folder, filename)
-                    try:
-                        with open(filepath, "r") as f:
-                            content = f.read()
-                        sections = content.split("---")
-                        _prompt_cache[filename] = sections[0].strip() if sections else content.strip()
-                    except Exception:
-                        pass
-            _prompt_cache_loaded = True
-        except Exception:
-            _prompt_cache_loaded = True
-
-    prompt_files_content = dict(_prompt_cache)
-
-    context_summary = ""
-    try:
-        summary_path = "/home/projects/tower_project/prompt/context_summary.md"
-        with open(summary_path, "r") as f:
-            parts = f.read().split("<!-- Summary will be injected here -->")
-            if len(parts) > 1:
-                context_summary = parts[1].strip()
-    except Exception:
-        pass
-
-    pref_text = ""
-    if prefs:
-        pref_lines = [f"• {k}: {v}" for k, v in prefs.items() if k != "current_session"]
-        if pref_lines:
-            pref_text = "\nUser preferences:\n" + "\n".join(pref_lines)
-
-    files_section = ""
-    for filename, content in prompt_files_content.items():
-        if content:
-            files_section += f"\n\n=== {filename} ===\n{content[:2000]}"
-    files_section = files_section[:8000]
-
-    context_section = f"\n\n### Previous Conversation Summary:\n{context_summary}\n" if context_summary else ""
-
-    system_message = {
-        "role": "system",
-        "content": f"""You are a helpful assistant.{context_section}{files_section}
-
-WEB TOOLS: search_web, fetch_url, call_api, search_and_fetch
-NAS TOOLS: nas_list_share, nas_list_folder, nas_search
-SYSTEM TOOLS: read_file, write_file, edit_file, glob, grep, ls, bash, docker, git, pkill
-DB TOOLS: postgres_query, postgres_list_tables, postgres_describe_table
-TELEGRAM TOOLS: telegram_send_message, telegram_send_notification, telegram_get_user_info, telegram_bot_health
-
-User preferences:{pref_text}
-CRITICAL RULES:
-- NEVER invent, embellish, or hallucinate any data, facts, names, numbers, or information not returned by tools.
-- When using tools, return ONLY actual data. Do NOT add rows, columns, values, statistics, or details that were not in the tool result.
-- If data is missing or you are unsure, say so clearly instead of making up information.
-- Use tools when needed. Do NOT make up tool names."""
-    }
-
+    system_message = PromptService.get_system_message(user_preferences=prefs)
     messages_with_system = [system_message] + messages_history
 
     try:
         from app.services.agent_service import AgentService
 
         agent = AgentService(telegram_service=telegram_service)
-        assistant_reply = await agent.run_agent_loop(
-            user_message=text,
-            chat_id=chat_id,
-            messages_history=messages_history,
-            system_prompt=system_message["content"],
-            tools=tools,
-            user_id=str(user.id)
-        )
-        await agent.close()
+        try:
+            assistant_reply = await agent.run_agent_loop(
+                user_message=text,
+                chat_id=chat_id,
+                messages_history=messages_history,
+                system_prompt=system_message["content"],
+                tools=tools,
+                user_id=str(user.id)
+            )
+        finally:
+            await agent.close()
     except Exception as e:
         logger.exception(f"Agent error: {e}")
         assistant_reply = "I'm thinking... Please try again in a moment."
@@ -758,15 +755,15 @@ CRITICAL RULES:
 
     conversation_service.update_timestamp(db, conversation.id)
 
-    print(f"HANDLE_TEXT_END: chat_id={chat_id}, sending reply", flush=True)
+    logger.info(f"HANDLE_TEXT_END: chat_id={chat_id}, sending reply")
     try:
         result = await telegram_service.send_message(chat_id, assistant_reply)
-        print(f"SEND_RESULT: {result}", flush=True)
+        logger.info(f"SEND_RESULT: chat_id={chat_id}, success={result}")
     except Exception as e:
-        print(f"SEND_ERROR: {e}", flush=True)
+        logger.error(f"SEND_ERROR: chat_id={chat_id}, error={e}")
         import traceback
         traceback.print_exc()
-    print(f"HANDLE_TEXT_SUCCESS: chat_id={chat_id}", flush=True)
+    logger.info(f"HANDLE_TEXT_SUCCESS: chat_id={chat_id}")
 
     return True
 
@@ -777,12 +774,24 @@ async def handle_callback_query(callback_query: dict, db: Session) -> dict:
     chat_id = str(callback_query["message"]["chat"]["id"])
     data = callback_query.get("data", "")
 
-    import logging
-    logger = logging.getLogger(__name__)
     logger.info(f"Callback query received: data={data}, chat_id={chat_id}")
 
     if data.startswith("/ls"):
         await handle_ls_command(chat_id, data[3:].strip(), db)
+        return {"status": "ok"}
+
+    if data.startswith("model_switch:"):
+        model_id = data[13:]
+        is_linked, user = await _require_linked_account(chat_id, db, "Setting model preference")
+        if not is_linked:
+            await telegram_service.answer_callback_query(query_id, text="Account not linked", show_alert=True)
+            return {"status": "ok"}
+        success = user_service.set_preference(db, user.id, "model", model_id)
+        if success:
+            await telegram_service.answer_callback_query(query_id, text=f"✓ Switched to {model_id}", show_alert=True)
+            await telegram_service.send_message(chat_id, f"✓ Model switched to `{model_id}`\nThis will be used for your next messages.")
+        else:
+            await telegram_service.answer_callback_query(query_id, text="Failed to save", show_alert=True)
         return {"status": "ok"}
 
     if data.startswith("conv_"):
@@ -854,9 +863,7 @@ async def notify_conversation(
     Send a notification to all users in a conversation.
     Requires authentication.
     """
-    from app.services.conversation_service import ConversationService
-
-    conversation_service = ConversationService()
+    conversation_service = _get_conversation_service()
     conversation = conversation_service.get_by_id(db, conversation_id)
 
     if not conversation:

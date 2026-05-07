@@ -115,12 +115,25 @@ class ConversationService(BaseService[Conversation]):
             Conversation.telegram_chat_id.isnot(None)
         ).all()
 
+    def get_or_create_session(
+        self,
+        db: Session,
+        user_id: UUID,
+        session_id: str,
+        title: Optional[str] = None
+    ) -> Conversation:
+        """Get existing session or create new one."""
+        existing = self.get_telegram_session(db, user_id, session_id)
+        if existing:
+            return existing
+        return self.create_telegram_session(db, user_id, session_id, title)
+
     def get_token_count(self, conversation) -> int:
         """Estimate token count from conversation messages."""
         total_chars = sum(len(m.content or "") for m in conversation.messages)
         return total_chars // 4
 
-    def compress_conversation(
+    async def compress_conversation(
         self,
         db: Session,
         conversation_id: UUID,
@@ -134,4 +147,4 @@ class ConversationService(BaseService[Conversation]):
             return None
 
         context_service = ContextService()
-        return context_service.compress_conversation(db, conversation, keep_last)
+        return await context_service.compress_conversation_async(db, conversation, keep_last)

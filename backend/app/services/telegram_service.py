@@ -8,8 +8,22 @@ Uses services from app.services.telegram subfolder.
 from typing import Optional, Dict, Any
 import httpx
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
+
+_service_cache: Optional["TelegramService"] = None
+_cache_lock = threading.Lock()
+
+
+def get_cached_telegram_service() -> "TelegramService":
+    """Get or create singleton TelegramService instance."""
+    global _service_cache
+    if _service_cache is None:
+        with _cache_lock:
+            if _service_cache is None:
+                _service_cache = TelegramService()
+    return _service_cache
 
 
 class TelegramService:
@@ -19,6 +33,8 @@ class TelegramService:
     Combines:
     - WebhookHandlerService: Webhook verification and parsing
     - MessageSenderService: Sending messages
+
+    Use get_cached_telegram_service() for singleton access.
     """
 
     def __init__(self, bot_token: Optional[str] = None):
@@ -170,7 +186,8 @@ class TelegramService:
             "*Commands:*\n"
             "/nas - List NAS shares\n"
             "/ls <folder> - Browse NAS folders\n"
-            "/naslogin - Connect to NAS\n\n"
+            "/naslogin - Connect to NAS\n"
+            "/model - List/switch AI models (/model list, /model switch <id>)\n"
             "/status - Check your account\n"
             "/help - Show this help\n"
         )
@@ -199,7 +216,8 @@ class TelegramService:
             "/compress - Summarize conversation\n"
             "/sessions - List your sessions\n"
             "/prefs - Show preferences\n"
-            "/setpref key=value - Set preference\n\n"
+            "/setpref key=value - Set preference\n"
+            "/model - Switch AI model\n\n"
             "*Messaging:*\n"
             "Just type your message to chat with Tower!\n"
             "Example: \"list my nas folders\" or \"search web for python\"\n"

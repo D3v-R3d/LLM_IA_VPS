@@ -7,10 +7,10 @@ Tools for Telegram bot operations.
 from typing import Optional
 
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
-from app.services.telegram_service import TelegramService
+from app.services.telegram_service import get_cached_telegram_service
 
 
-telegram_service = TelegramService()
+telegram_service = get_cached_telegram_service()
 
 
 class TelegramSendMessageTool(BaseTool):

@@ -101,7 +101,7 @@ class WebSearchService:
         Returns:
             Search results plus content from top result
         """
-        from app.services.tools.url_fetch import URLFetchService
+        from app.services.agent_tools.tools.url_fetch import URLFetchService
 
         search_result = await self.search(query, num_results=1)
 

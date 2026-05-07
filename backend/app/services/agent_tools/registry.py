@@ -4,6 +4,7 @@ Tool Registry
 Central registry for all available tools.
 """
 
+import threading
 from typing import Dict, List, Optional
 
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
@@ -13,9 +14,11 @@ class ToolRegistry:
     """
     Registry that holds all available tools.
     Tools are indexed by name for quick lookup.
+    Thread-safe singleton.
     """
 
     _instance: Optional["ToolRegistry"] = None
+    _lock: threading.Lock = threading.Lock()
 
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
@@ -24,8 +27,10 @@ class ToolRegistry:
     @classmethod
     def get_instance(cls) -> "ToolRegistry":
         if cls._instance is None:
-            cls._instance = cls()
-            cls._instance._register_default_tools()
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+                    cls._instance._register_default_tools()
         return cls._instance
 
     def _register_default_tools(self):
@@ -47,6 +52,10 @@ class ToolRegistry:
             TelegramGetUserInfoTool, TelegramBotHealthTool
         )
         from app.services.agent_tools.tools.user_notes_tool import UserNotesTool
+        from app.services.agent_tools.tools.scraper_tools import (
+            ScrapeAndStoreTool, SearchStoredContentTool
+        )
+        from app.services.agent_tools.tools.model_switch_tool import ModelSwitchTool
 
         tools = [
             ReadTool(),
@@ -70,6 +79,9 @@ class ToolRegistry:
             TelegramGetUserInfoTool(),
             TelegramBotHealthTool(),
             UserNotesTool(),
+            ScrapeAndStoreTool(),
+            SearchStoredContentTool(),
+            ModelSwitchTool(),
         ]
 
         for tool in tools:

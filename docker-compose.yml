@@ -18,6 +18,7 @@ services:
       - SYNOLOGY_USERNAME_FILE=/run/secrets/synology_username
       - SYNOLOGY_PASSWORD_FILE=/run/secrets/synology_password
       - JWT_SECRET=${JWT_SECRET}
+      - PROMPT_DIR=/home/projects/tower_project
     secrets:
       - ollama_api_key
       - telegram_bot_token
@@ -26,8 +27,7 @@ services:
       - synology_username
       - synology_password
     volumes:
-      - ./prompt:/home/projects/tower_project/
-      - ./prompt:/home/projects/tower_project/prompt
+      - ./prompt:/home/projects/tower_project
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - tower_network

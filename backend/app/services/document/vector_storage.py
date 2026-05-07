@@ -129,7 +129,9 @@ class VectorStorageService:
 
             self.client.upsert(collection_name=collection_name, points=points)
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.error(f"insert_vectors failed: {e}")
             return False
 
     def search(
@@ -152,11 +154,18 @@ class VectorStorageService:
             List of results with id, score, payload
         """
         try:
-            results = self.client.search(
-                collection_name=collection_name,
-                query_vector=query_vector,
+            from qdrant_client.http.models import SearchRequest
+
+            search_request = SearchRequest(
+                vector=query_vector,
                 limit=limit,
-                score_threshold=score_threshold
+                score_threshold=score_threshold,
+                with_payload=True
+            )
+
+            results = self.client.http.search_api.search_points(
+                collection_name=collection_name,
+                search_request=search_request
             )
 
             return [
@@ -165,9 +174,11 @@ class VectorStorageService:
                     "score": r.score,
                     "payload": r.payload
                 }
-                for r in results
+                for r in results.result
             ]
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.error(f"search failed: {e}")
             return []
 
     def scroll_points(
@@ -197,6 +208,8 @@ class VectorStorageService:
                 with_vectors=with_vectors
             )
 
+            points, next_page_offset = results if isinstance(results, tuple) else (results, None)
+
             return {
                 "points": [
                     {
@@ -205,9 +218,9 @@ class VectorStorageService:
                         "payload": p.payload,
                         "score": getattr(p, 'score', None)
                     }
-                    for p in results.points
+                    for p in points
                 ],
-                "next_page_offset": results.next_page_offset
+                "next_page_offset": next_page_offset
             }
         except Exception:
             return {"points": [], "next_page_offset": None}

@@ -6,6 +6,8 @@ System tools: bash, docker, git, pkill
 Web tools: web_fetch, web_search, api_fetch
 Database tools: postgres_query, postgres_list_tables, postgres_describe_table
 Telegram tools: telegram_send_message, telegram_send_notification, telegram_get_user_info, telegram_bot_health
+
+Services: WebSearchService, URLFetchService, APICallerService, ToolsService
 """
 
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult, SyncTool
@@ -25,6 +27,10 @@ from app.services.agent_tools.tools.telegram_tools import (
     TelegramSendMessageTool, TelegramSendNotificationTool,
     TelegramGetUserInfoTool, TelegramBotHealthTool
 )
+from app.services.agent_tools.tools.web_search import WebSearchService
+from app.services.agent_tools.tools.url_fetch import URLFetchService
+from app.services.agent_tools.tools.api_caller import APICallerService
+from app.services.agent_tools.tools.unified_tools_service import ToolsService
 
 __all__ = [
     "BaseTool", "ToolResult", "SyncTool",
@@ -33,5 +39,6 @@ __all__ = [
     "WebFetchTool", "WebSearchTool", "APIFetchTool",
     "PostgresQueryTool", "PostgresListTablesTool", "PostgresDescribeTableTool",
     "TelegramSendMessageTool", "TelegramSendNotificationTool",
-    "TelegramGetUserInfoTool", "TelegramBotHealthTool"
+    "TelegramGetUserInfoTool", "TelegramBotHealthTool",
+    "WebSearchService", "URLFetchService", "APICallerService", "ToolsService"
 ]

@@ -31,7 +31,7 @@ class Settings:
         self.QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
         self.OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
         self.OLLAMA_CLOUD_HOST = os.environ.get("OLLAMA_CLOUD_HOST", "https://ollama.com")
-        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:397b-cloud")
+        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "minimax-m2.7")
 
         self.OLLAMA_API_KEY = (
             os.environ.get("OLLAMA_API_KEY") or
@@ -51,6 +51,7 @@ class Settings:
         )
         self.TELEGRAM_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL")
         self.JWT_SECRET = os.environ.get("JWT_SECRET", "change_me_in_production_with_strong_secret_key")
+        self.PROMPT_DIR = os.environ.get("PROMPT_DIR", "/home/projects/tower_project/prompt")
 
 
 def get_settings() -> "Settings":

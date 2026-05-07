@@ -2,12 +2,31 @@
 Tools Service
 
 Unified interface for LLM tool calling.
-Uses services from app.services.tools subfolder.
+Uses services from app.services.agent_tools.tools subfolder.
 """
 
+import threading
 from typing import List, Dict, Any
-from app.services.tools import WebSearchService, URLFetchService, APICallerService
+from app.services.agent_tools.tools.web_search import WebSearchService
+from app.services.agent_tools.tools.url_fetch import URLFetchService
+from app.services.agent_tools.tools.api_caller import APICallerService
 from app.services.synology import SynologyClient, SynologyAuth, FileStation
+
+_nas_cache = None
+_nas_cache_lock = threading.Lock()
+
+
+def _get_cached_nas():
+    """Get or create cached NAS client (singleton pattern)."""
+    global _nas_cache
+    if _nas_cache is None:
+        with _nas_cache_lock:
+            if _nas_cache is None:
+                client = SynologyClient()
+                auth = SynologyAuth(client)
+                auth.login()
+                _nas_cache = FileStation(client)
+    return _nas_cache
 
 
 class ToolsService:
@@ -22,8 +41,6 @@ class ToolsService:
         self.web_search = WebSearchService()
         self.url_fetch = URLFetchService()
         self.api_caller = APICallerService()
-        self._nas_client = None
-        self._nas_auth = None
 
     def get_tools(self) -> List[Dict[str, Any]]:
         """Get tool definitions for LLM function calling."""
@@ -171,26 +188,14 @@ class ToolsService:
                 query=arguments.get("query", "")
             )
         elif tool_name == "nas_list_share":
-            if not self._nas_client:
-                self._nas_client = SynologyClient()
-                self._nas_auth = SynologyAuth(self._nas_client)
-                self._nas_auth.login()
-                self.nas = FileStation(self._nas_client)
-            return self.nas.list_shares()
+            nas = _get_cached_nas()
+            return nas.list_shares()
         elif tool_name == "nas_list_folder":
-            if not self._nas_client:
-                self._nas_client = SynologyClient()
-                self._nas_auth = SynologyAuth(self._nas_client)
-                self._nas_auth.login()
-                self.nas = FileStation(self._nas_client)
-            return self.nas.list_folders(folder_path=arguments.get("folder_path", "/"))
+            nas = _get_cached_nas()
+            return nas.list_folders(folder_path=arguments.get("folder_path", "/"))
         elif tool_name == "nas_search":
-            if not self._nas_client:
-                self._nas_client = SynologyClient()
-                self._nas_auth = SynologyAuth(self._nas_client)
-                self._nas_auth.login()
-                self.nas = FileStation(self._nas_client)
-            return self.nas.search(folder_path=arguments.get("folder_path", "/"), keyword=arguments.get("keyword", ""))
+            nas = _get_cached_nas()
+            return nas.search(folder_path=arguments.get("folder_path", "/"), keyword=arguments.get("keyword", ""))
         else:
             return {
                 "success": False,
