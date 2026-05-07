@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
 from typing import Optional
 from uuid import UUID
 import logging
+import asyncio
 
 from app.services.telegram_service import TelegramService
 from app.services.user_service import UserService
@@ -14,9 +15,29 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 telegram_service = TelegramService()
 user_service = UserService()
 
-
-import logging
 logger = logging.getLogger(__name__)
+
+_conversation_locks: dict[str, asyncio.Lock] = {}
+_lock_cleanup_interval = 300
+
+
+async def _get_conversation_lock(chat_id: str) -> asyncio.Lock:
+    """Get or create a lock for a conversation."""
+    if chat_id not in _conversation_locks:
+        _conversation_locks[chat_id] = asyncio.Lock()
+    return _conversation_locks[chat_id]
+
+
+async def _cleanup_old_locks():
+    """Remove locks that are no longer held (older than cleanup interval)."""
+    now = asyncio.get_event_loop().time()
+    to_remove = []
+    for chat_id, lock in _conversation_locks.items():
+        if lock.locked() is False:
+            if hasattr(lock, '_last_used') and now - lock._last_used > _lock_cleanup_interval:
+                to_remove.append(chat_id)
+    for chat_id in to_remove:
+        del _conversation_locks[chat_id]
 
 
 @router.post("/webhook")
@@ -53,40 +74,47 @@ async def telegram_webhook(
     text = message["text"]
     message_id = message["message_id"]
 
-    command, args = telegram_service.parse_command(text)
+    lock = await _get_conversation_lock(chat_id)
+    if lock.locked():
+        logger.info(f"Chat {chat_id} is already processing, acknowledging duplicate")
+        await telegram_service.send_message(chat_id, "⏳ Je traite votre message précédent...")
+        return {"status": "ok", "queued": True}
 
-    if command == "start":
-        await handle_start_command(chat_id, args, db)
-    elif command == "help":
-        await telegram_service.send_help_message(chat_id)
-    elif command == "status":
-        await handle_status_command(chat_id, db)
-    elif command == "link":
-        await handle_link_command(chat_id, args, db)
-    elif command == "unlink":
-        await handle_unlink_command(chat_id, db)
-    elif command == "register":
-        await handle_register_command(chat_id, args, db)
-    elif command == "setpref":
-        await handle_setpref_command(chat_id, args, db)
-    elif command == "prefs":
-        await handle_prefs_command(chat_id, db)
-    elif command == "sessions":
-        await handle_sessions_command(chat_id, db)
-    elif command == "new":
-        await handle_new_command(chat_id, args, db)
-    elif command == "reset":
-        await handle_reset_command(chat_id, db)
-    elif command == "compress":
-        await handle_compress_command(chat_id, db)
-    elif command == "nas":
-        await handle_nas_command(chat_id, args, db)
-    elif command == "ls":
-        await handle_ls_command(chat_id, args, db)
-    elif command == "naslogin":
-        await handle_nas_login_command(chat_id, db)
-    else:
-        await handle_text_message(chat_id, text, db)
+    async with lock:
+        command, args = telegram_service.parse_command(text)
+
+        if command == "start":
+            await handle_start_command(chat_id, args, db)
+        elif command == "help":
+            await telegram_service.send_help_message(chat_id)
+        elif command == "status":
+            await handle_status_command(chat_id, db)
+        elif command == "link":
+            await handle_link_command(chat_id, args, db)
+        elif command == "unlink":
+            await handle_unlink_command(chat_id, db)
+        elif command == "register":
+            await handle_register_command(chat_id, args, db)
+        elif command == "setpref":
+            await handle_setpref_command(chat_id, args, db)
+        elif command == "prefs":
+            await handle_prefs_command(chat_id, db)
+        elif command == "sessions":
+            await handle_sessions_command(chat_id, db)
+        elif command == "new":
+            await handle_new_command(chat_id, args, db)
+        elif command == "reset":
+            await handle_reset_command(chat_id, db)
+        elif command == "compress":
+            await handle_compress_command(chat_id, db)
+        elif command == "nas":
+            await handle_nas_command(chat_id, args, db)
+        elif command == "ls":
+            await handle_ls_command(chat_id, args, db)
+        elif command == "naslogin":
+            await handle_nas_login_command(chat_id, db)
+        else:
+            await handle_text_message(chat_id, text, db)
 
     return {"status": "ok"}
 
@@ -514,17 +542,10 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     from app.services.conversation_service import ConversationService
     from app.services.message_service import MessageService
-    from app.services.llm import ChatService as LLMService
-    from app.core.config import settings
     from app.schemas.message import MessageCreate
-    from datetime import datetime, timezone
 
     conversation_service = ConversationService()
     message_service = MessageService()
-    llm_service = LLMService(
-        base_url=settings.OLLAMA_CLOUD_HOST,
-        api_key=settings.OLLAMA_API_KEY
-    )
 
     prefs = user_service.get_preferences(db, user.id)
     current_session = prefs.get("current_session")
@@ -534,16 +555,16 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
         if not conversation:
             conversation = conversation_service.create_telegram_session(db, user.id, current_session)
     else:
-        conversation = conversation_service.get_telegram_conversation(db, user.id)
+        conversation = conversation_service.get_by_telegram_chat_id(db, chat_id)
 
     if not conversation:
-        conversation = conversation_service.create_telegram_session(db, user.id, str(user.id)[:8])
+        conversation = conversation_service.create_telegram_session(db, user.id, chat_id)
 
     from app.services.context_service import ContextService, CONTEXT_CONFIG
 
     context_service = ContextService()
 
-    if context_service.should_compress(conversation) and False:
+    if context_service.should_compress(conversation):
         await telegram_service.send_chat_action(chat_id, "typing")
         await context_service.compress_conversation_async(db, conversation)
 
@@ -562,7 +583,7 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     messages_history = [
         {"role": m.role, "content": m.content}
-        for m in conversation.messages[-20:]
+        for m in conversation.messages[-CONTEXT_CONFIG["max_messages"]:]
     ]
 
     from app.services.tools_service import ToolsService
@@ -573,15 +594,50 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     agent_tools = get_tool_definitions()
     tools = web_tools + agent_tools
 
+    prompt_folder = "/home/projects/tower_project/prompt"
+    prompt_files_content = {}
+
+    try:
+        for filename in os.listdir(prompt_folder):
+            if filename.endswith(".md") and filename != "context_summary.md":
+                filepath = os.path.join(prompt_folder, filename)
+                try:
+                    with open(filepath, "r") as f:
+                        content = f.read()
+                    sections = content.split("---")
+                    prompt_files_content[filename] = sections[0].strip() if sections else content.strip()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    context_summary = ""
+    try:
+        summary_path = os.path.join(prompt_folder, "context_summary.md")
+        with open(summary_path, "r") as f:
+            parts = f.read().split("<!-- Summary will be injected here -->")
+            if len(parts) > 1:
+                context_summary = parts[1].strip()
+    except Exception:
+        pass
+
     pref_text = ""
     if prefs:
         pref_lines = [f"• {k}: {v}" for k, v in prefs.items() if k != "current_session"]
         if pref_lines:
             pref_text = "\nUser preferences:\n" + "\n".join(pref_lines)
 
+    files_section = ""
+    for filename, content in prompt_files_content.items():
+        if content:
+            files_section += f"\n\n=== {filename} ===\n{content[:2000]}"
+    files_section = files_section[:8000]
+
+    context_section = f"\n\n### Previous Conversation Summary:\n{context_summary}\n" if context_summary else ""
+
     system_message = {
         "role": "system",
-        "content": f"""You are a helpful assistant.
+        "content": f"""You are a helpful assistant.{context_section}{files_section}
 
 WEB TOOLS: search_web, fetch_url, call_api, search_and_fetch
 NAS TOOLS: nas_list_share, nas_list_folder, nas_search
@@ -600,27 +656,24 @@ CRITICAL RULES:
     messages_with_system = [system_message] + messages_history
 
     try:
-        response = await llm_service.chat_with_tools(
-            model="qwen3.5:397b-cloud",
-            messages=messages_with_system,
-            tools=tools
+        from app.services.agent_service import AgentService
+
+        agent = AgentService(telegram_service=telegram_service)
+        assistant_reply = await agent.run_agent_loop(
+            user_message=text,
+            chat_id=chat_id,
+            messages_history=messages_history,
+            system_prompt=system_message["content"],
+            tools=tools,
+            user_id=str(user.id)
         )
-        assistant_reply = response.get("message", {}).get("content", "Sorry, I couldn't process that.")
+        await agent.close()
     except Exception as e:
+        logger.exception(f"Agent error: {e}")
         assistant_reply = "I'm thinking... Please try again in a moment."
-        message_data = MessageCreate(
-            conversation_id=conversation.id,
-            role="assistant",
-            content=assistant_reply
-        )
-        message_service.create(
-            db=db,
-            user_id=user.id,
-            message_data=message_data
-        )
-        conversation_service.update_timestamp(db, conversation.id)
-        await telegram_service.send_message(chat_id, assistant_reply)
-        return True
+
+    if not assistant_reply or not assistant_reply.strip():
+        assistant_reply = "Here's what I found."
 
     message_data = MessageCreate(
         conversation_id=conversation.id,

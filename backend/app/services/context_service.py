@@ -9,15 +9,18 @@ Handles conversation context management:
 This allows long conversations to be summarized while preserving key information.
 """
 
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from app.schemas.message import MessageCreate
 
 
 CONTEXT_CONFIG = {
-    "max_tokens": 2000,
-    "keep_last_messages": 15,
+    "max_tokens": 1000,
+    "keep_last_messages": 10,
+    "max_messages": 20,
     "chars_per_token": 4,
     "summary_max_chars": 4000,
 }
@@ -76,8 +79,9 @@ class ContextService:
         """
         Compress conversation by summarizing old messages.
 
-        Keeps the last N messages and summarizes the rest into a single
-        summary message that is prepended to the conversation.
+        Keeps the last N messages and summarizes the rest.
+        Old messages STAY in DB but won't be included in messages_history.
+        Summary is returned for use in LLM context.
 
         Args:
             db: Database session
@@ -87,7 +91,6 @@ class ContextService:
         Returns:
             Summary text if compression was performed, None otherwise
         """
-        from app.services.message_service import MessageService
         from app.services.llm import ChatService
         from app.core.config import settings
 
@@ -98,7 +101,6 @@ class ContextService:
             return None
 
         messages_to_summarize = conversation.messages[:-keep_last]
-        messages_to_keep = conversation.messages[-keep_last:]
 
         summary_text = "\n".join([
             f"{m.role}: {m.content}" for m in messages_to_summarize
@@ -125,7 +127,7 @@ Provide a concise summary in 2-3 sentences max."""
         )
         try:
             response = await llm.chat(
-                model="minimax-m2.7",
+                model="qwen3.5:397b-cloud",
                 messages=[{"role": "user", "content": summary_prompt}]
             )
             summary = response.get("message", {}).get("content", "")
@@ -134,13 +136,16 @@ Provide a concise summary in 2-3 sentences max."""
         finally:
             await llm.close()
 
-        message_service = MessageService()
-
-        for msg in messages_to_summarize:
-            try:
-                message_service.delete(db, msg.id)
-            except Exception:
-                pass
+        summary_file = "/home/projects/tower_project/prompt/context_summary.md"
+        try:
+            with open(summary_file, "r") as f:
+                content = f.read()
+            header = content.split("<!-- Summary will be injected here -->")[0]
+            footer = content.split("<!-- Summary will be injected here -->")[1] if "<!-- Summary will be injected here -->" in content else ""
+            with open(summary_file, "w") as f:
+                f.write(f"{header}<!-- Summary will be injected here -->{footer}\n[{datetime.utcnow().isoformat()}] {summary}")
+        except Exception:
+            pass
 
         return summary
 

@@ -5,9 +5,106 @@ Tools for system operations.
 """
 
 import subprocess
+import socket
+import json
 from typing import Optional
 
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult, SyncTool
+
+
+class DockerTool(SyncTool):
+    """Execute docker commands using Docker socket API."""
+
+    @property
+    def name(self) -> str:
+        return "docker"
+
+    @property
+    def description(self) -> str:
+        return "Execute docker commands (ps, images, logs, etc.)"
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Docker command to execute (without 'docker' prefix)"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"}
+            },
+            "required": ["command"]
+        }
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        command = kwargs.get("command", "")
+        timeout = kwargs.get("timeout", 30)
+
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect("/var/run/docker.sock")
+
+            path = "/containers/json"
+            method = "GET"
+
+            if command.startswith("ps"):
+                path = "/containers/json"
+                params = "all=1"
+                if "ps -a" in command or "ps --all" in command:
+                    params = "all=true"
+                path = f"{path}?{params}"
+            elif command.startswith("images"):
+                path = "/images/json"
+            elif command.startswith("logs"):
+                parts = command.split()
+                container_id = parts[1] if len(parts) > 1 else ""
+                if container_id and len(container_id) < 64:
+                    path = f"/containers/{container_id}/logs?stdout=1&stderr=1"
+                else:
+                    return ToolResult(success=False, error="Invalid container ID for logs")
+            elif command.startswith("inspect"):
+                parts = command.split()
+                container_id = parts[1] if len(parts) > 1 else ""
+                if container_id:
+                    path = f"/containers/{container_id}/json"
+            elif command.startswith("stats"):
+                path = "/containers/stats?stream=0"
+            elif command.startswith("version"):
+                path = "/version"
+            else:
+                path = "/containers/json?all=true"
+
+            request = f"{method} {path} HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            sock.send(request.encode())
+
+            response = b""
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                    if len(response) > 50000:
+                        response += b"\n[Output truncated]"
+                        break
+                except socket.timeout:
+                    break
+
+            sock.close()
+
+            if b"\r\n\r\n" in response:
+                body = response.split(b"\r\n\r\n", 1)[1]
+                if body.startswith(b"0\r\n") or body.startswith(b"0"):
+                    body = body.split(b"\r\n", 1)[1] if b"\r\n" in body else body
+                    body = body.split(b"\r\n", 1)[1] if b"\r\n" in body else body
+                decoded = body.decode("utf-8", errors="replace")
+                return ToolResult(success=True, data={"response": decoded[:40000]})
+            else:
+                return ToolResult(success=True, data={"raw_response": response.decode("utf-8", errors="replace")[:40000]})
+
+        except socket.timeout:
+            return ToolResult(success=False, error=f"Docker command timed out after {timeout}s")
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
 
 
 class BashTool(SyncTool):
@@ -34,56 +131,6 @@ class BashTool(SyncTool):
 
     def _execute_sync(self, **kwargs) -> ToolResult:
         command = kwargs.get("command")
-        timeout = kwargs.get("timeout", 30)
-
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            return ToolResult(
-                success=result.returncode == 0,
-                data={
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
-                }
-            )
-        except subprocess.TimeoutExpired:
-            return ToolResult(success=False, error=f"Command timed out after {timeout}s")
-        except Exception as e:
-            return ToolResult(success=False, error=str(e))
-
-
-class DockerTool(SyncTool):
-    """Execute docker commands."""
-
-    @property
-    def name(self) -> str:
-        return "docker"
-
-    @property
-    def description(self) -> str:
-        return "Execute docker commands (ps, images, logs, etc.)"
-
-    @property
-    def parameters(self) -> dict:
-        return {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Docker command to execute"},
-                "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"}
-            },
-            "required": ["command"]
-        }
-
-    def _execute_sync(self, **kwargs) -> ToolResult:
-        command = kwargs.get("command")
-        if not command.startswith("docker"):
-            command = f"docker {command}"
         timeout = kwargs.get("timeout", 30)
 
         try:
