@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 from app.schemas.message import MessageCreate
+from app.core.config import settings
 
 
 CONTEXT_CONFIG = {
@@ -127,7 +128,7 @@ Provide a concise summary in 2-3 sentences max."""
         )
         try:
             response = await llm.chat(
-                model="qwen3.5:397b-cloud",
+                model=settings.OLLAMA_MODEL,
                 messages=[{"role": "user", "content": summary_prompt}]
             )
             summary = response.get("message", {}).get("content", "")

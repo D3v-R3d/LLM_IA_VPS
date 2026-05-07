@@ -42,8 +42,16 @@ async def lifespan(app: FastAPI):
     Handles resource allocation when the application starts and
     cleanup when it shuts down.
     """
+    from app.api.v1.telegram import start_lock_cleanup
+    start_lock_cleanup()
     yield
-    await asyncio.sleep(0)
+    from app.api.v1.telegram import _lock_cleanup_task
+    if _lock_cleanup_task and not _lock_cleanup_task.done():
+        _lock_cleanup_task.cancel()
+        try:
+            await _lock_cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

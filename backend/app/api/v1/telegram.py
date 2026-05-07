@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 import logging
 import asyncio
+import os
 
 from app.services.telegram_service import TelegramService
 from app.services.user_service import UserService
@@ -19,25 +20,56 @@ logger = logging.getLogger(__name__)
 
 _conversation_locks: dict[str, asyncio.Lock] = {}
 _lock_cleanup_interval = 300
+_lock_cleanup_task = None
+
+_prompt_cache: dict[str, str] = {}
+_prompt_cache_loaded = False
+
+
+class _LockWithTimestamp(asyncio.Lock):
+    """Lock with timestamp tracking for cleanup."""
+    def __init__(self):
+        super().__init__()
+        self._last_used = asyncio.get_event_loop().time()
 
 
 async def _get_conversation_lock(chat_id: str) -> asyncio.Lock:
     """Get or create a lock for a conversation."""
     if chat_id not in _conversation_locks:
-        _conversation_locks[chat_id] = asyncio.Lock()
+        _conversation_locks[chat_id] = _LockWithTimestamp()
+    else:
+        lock = _conversation_locks[chat_id]
+        if hasattr(lock, '_last_used'):
+            lock._last_used = asyncio.get_event_loop().time()
     return _conversation_locks[chat_id]
 
 
 async def _cleanup_old_locks():
     """Remove locks that are no longer held (older than cleanup interval)."""
-    now = asyncio.get_event_loop().time()
-    to_remove = []
-    for chat_id, lock in _conversation_locks.items():
-        if lock.locked() is False:
-            if hasattr(lock, '_last_used') and now - lock._last_used > _lock_cleanup_interval:
-                to_remove.append(chat_id)
-    for chat_id in to_remove:
-        del _conversation_locks[chat_id]
+    while True:
+        try:
+            await asyncio.sleep(_lock_cleanup_interval)
+            now = asyncio.get_event_loop().time()
+            to_remove = []
+            for chat_id, lock in _conversation_locks.items():
+                if hasattr(lock, '_last_used') and now - lock._last_used > _lock_cleanup_interval:
+                    if not lock.locked():
+                        to_remove.append(chat_id)
+            for chat_id in to_remove:
+                del _conversation_locks[chat_id]
+            if to_remove:
+                logger.info(f"Cleaned up {len(to_remove)} old conversation locks")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Lock cleanup error: {e}")
+
+
+def start_lock_cleanup():
+    """Start the lock cleanup background task."""
+    global _lock_cleanup_task
+    if _lock_cleanup_task is None or _lock_cleanup_task.done():
+        _lock_cleanup_task = asyncio.create_task(_cleanup_old_locks())
 
 
 @router.post("/webhook")
@@ -117,6 +149,17 @@ async def telegram_webhook(
             await handle_text_message(chat_id, text, db)
 
     return {"status": "ok"}
+
+
+async def handle_register_command(chat_id: str, args: Optional[str], db: Session) -> bool:
+    """Handle /register command - redirect to web app."""
+    return await telegram_service.send_message(
+        chat_id,
+        "❌ Registration is not available via Telegram.\n\n"
+        "Please register via the web app at:\n"
+        "https://www.srv1632761.hstgr.cloud\n\n"
+        "After registering, use /link <email> to link your account."
+    )
 
 
 async def handle_start_command(chat_id: str, args: Optional[str], db: Session) -> bool:
@@ -588,32 +631,35 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
 
     from app.services.tools_service import ToolsService
     from app.services.agent_tools import get_tool_definitions
-    
+
     tools_service = ToolsService()
     web_tools = tools_service.get_tools()
     agent_tools = get_tool_definitions()
     tools = web_tools + agent_tools
 
-    prompt_folder = "/home/projects/tower_project/prompt"
-    prompt_files_content = {}
+    global _prompt_cache, _prompt_cache_loaded
+    if not _prompt_cache_loaded:
+        prompt_folder = "/home/projects/tower_project/prompt"
+        try:
+            for filename in os.listdir(prompt_folder):
+                if filename.endswith(".md") and filename != "context_summary.md":
+                    filepath = os.path.join(prompt_folder, filename)
+                    try:
+                        with open(filepath, "r") as f:
+                            content = f.read()
+                        sections = content.split("---")
+                        _prompt_cache[filename] = sections[0].strip() if sections else content.strip()
+                    except Exception:
+                        pass
+            _prompt_cache_loaded = True
+        except Exception:
+            _prompt_cache_loaded = True
 
-    try:
-        for filename in os.listdir(prompt_folder):
-            if filename.endswith(".md") and filename != "context_summary.md":
-                filepath = os.path.join(prompt_folder, filename)
-                try:
-                    with open(filepath, "r") as f:
-                        content = f.read()
-                    sections = content.split("---")
-                    prompt_files_content[filename] = sections[0].strip() if sections else content.strip()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    prompt_files_content = dict(_prompt_cache)
 
     context_summary = ""
     try:
-        summary_path = os.path.join(prompt_folder, "context_summary.md")
+        summary_path = "/home/projects/tower_project/prompt/context_summary.md"
         with open(summary_path, "r") as f:
             parts = f.read().split("<!-- Summary will be injected here -->")
             if len(parts) > 1:

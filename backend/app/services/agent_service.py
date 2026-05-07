@@ -97,7 +97,7 @@ class AgentService:
             print(f"AGENT: Iteration {iteration}", flush=True)
 
             response = await self.llm.chat_with_tools(
-                model="qwen3.5:397b-cloud",
+                model=settings.OLLAMA_MODEL,
                 messages=context,
                 tools=tools
             )
@@ -355,7 +355,7 @@ class AgentService:
             eval_context = list(context) + [eval_message]
 
             response = await self.llm.chat(
-                model="qwen3.5:397b-cloud",
+                model=settings.OLLAMA_MODEL,
                 messages=eval_context,
                 options={"temperature": 0.1}
             )
@@ -385,7 +385,7 @@ class AgentService:
             summary_context = list(context) + [summary_message]
 
             response = await self.llm.chat(
-                model="qwen3.5:397b-cloud",
+                model=settings.OLLAMA_MODEL,
                 messages=summary_context,
                 options={"temperature": 0.3}
             )

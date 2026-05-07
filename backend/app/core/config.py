@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Ollama Cloud API key for authentication
     OLLAMA_API_KEY: Optional[str] = None
 
+    # Default model name for LLM interactions
+    OLLAMA_MODEL: str = "qwen3.5:397b-cloud"
+
     # Telegram Bot configuration
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_BOT_USERNAME: Optional[str] = None
