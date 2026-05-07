@@ -34,7 +34,8 @@ class AgentService:
         max_iterations: int = 10,
         max_result_preview: int = 200,
         empty_response_threshold: int = 2,
-        convergence_threshold: int = 3
+        convergence_threshold: int = 3,
+        tool_timeout: int = 60
     ):
         """
         Initialize agent service.
@@ -45,12 +46,14 @@ class AgentService:
             max_result_preview: Max chars to send to user per result
             empty_response_threshold: Consecutive empty responses before stop
             convergence_threshold: Similar results before stop
+            tool_timeout: Max seconds to wait for tool execution
         """
         self.telegram_service = telegram_service
         self.max_iterations = max_iterations
         self.max_result_preview = max_result_preview
         self.empty_response_threshold = empty_response_threshold
         self.convergence_threshold = convergence_threshold
+        self.tool_timeout = tool_timeout
         self.tools_service = ToolsService()
         self.registry = get_registry()
         self.llm = ChatService(
@@ -294,18 +297,31 @@ class AgentService:
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Any:
         """Execute a tool using ToolsService or Agent registry."""
         try:
-            result = await self.tools_service.execute_tool(tool_name, arguments)
+            result = await asyncio.wait_for(
+                self.tools_service.execute_tool(tool_name, arguments),
+                timeout=self.tool_timeout
+            )
             if not (isinstance(result, dict) and "Unknown tool" in str(result.get("error", ""))):
                 return result
+        except asyncio.TimeoutError:
+            return {"success": False, "error": f"Tool '{tool_name}' timed out after {self.tool_timeout}s"}
         except Exception:
             pass
 
-        result = await self.registry.execute(tool_name, **arguments)
-        return {
-            "success": result.success,
-            "data": result.data,
-            "error": result.error
-        }
+        try:
+            result = await asyncio.wait_for(
+                self.registry.execute(tool_name, **arguments),
+                timeout=self.tool_timeout
+            )
+            return {
+                "success": result.success,
+                "data": result.data,
+                "error": result.error
+            }
+        except asyncio.TimeoutError:
+            return {"success": False, "error": f"Tool '{tool_name}' timed out after {self.tool_timeout}s"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     async def _notify_result(self, chat_id: str, tool_name: str, result: Any) -> None:
         """Send tool result notification to user."""

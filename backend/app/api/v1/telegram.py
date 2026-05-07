@@ -115,6 +115,14 @@ async def telegram_webhook(
     async with lock:
         command, args = telegram_service.parse_command(text)
 
+        max_message_length = 4000
+        if len(text) > max_message_length:
+            await telegram_service.send_message(
+                chat_id,
+                f"❌ Message trop long ({len(text)}/{max_message_length} caractères). Merci de réduire la taille."
+            )
+            return {"status": "ok"}
+
         if command == "start":
             await handle_start_command(chat_id, args, db)
         elif command == "help":

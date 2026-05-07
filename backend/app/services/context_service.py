@@ -9,6 +9,7 @@ Handles conversation context management:
 This allows long conversations to be summarized while preserving key information.
 """
 
+import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -22,8 +23,9 @@ CONTEXT_CONFIG = {
     "max_tokens": 1000,
     "keep_last_messages": 10,
     "max_messages": 20,
-    "chars_per_token": 4,
+    "chars_per_token": 3.5,
     "summary_max_chars": 4000,
+    "summary_file_path": "/home/projects/tower_project/prompt/context_summary.md",
 }
 
 
@@ -137,16 +139,17 @@ Provide a concise summary in 2-3 sentences max."""
         finally:
             await llm.close()
 
-        summary_file = "/home/projects/tower_project/prompt/context_summary.md"
-        try:
-            with open(summary_file, "r") as f:
-                content = f.read()
-            header = content.split("<!-- Summary will be injected here -->")[0]
-            footer = content.split("<!-- Summary will be injected here -->")[1] if "<!-- Summary will be injected here -->" in content else ""
-            with open(summary_file, "w") as f:
-                f.write(f"{header}<!-- Summary will be injected here -->{footer}\n[{datetime.utcnow().isoformat()}] {summary}")
-        except Exception:
-            pass
+            summary_file = CONTEXT_CONFIG["summary_file_path"]
+            os.makedirs(os.path.dirname(summary_file), exist_ok=True)
+            try:
+                with open(summary_file, "r") as f:
+                    content = f.read()
+                header = content.split("<!-- Summary will be injected here -->")[0]
+                footer = content.split("<!-- Summary will be injected here -->")[1] if "<!-- Summary will be injected here -->" in content else ""
+                with open(summary_file, "w") as f:
+                    f.write(f"{header}<!-- Summary will be injected here -->{footer}\n[{datetime.utcnow().isoformat()}] {summary}")
+            except Exception:
+                pass
 
         return summary
 
