@@ -113,4 +113,8 @@ docker-compose.override.yml
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbsecrets/
+.env.local
+*.log
+__pycache__/
+*.pyc

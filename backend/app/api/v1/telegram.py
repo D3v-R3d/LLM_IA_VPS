@@ -9,7 +9,9 @@ from app.services.telegram_service import TelegramService
 from app.services.user_service import UserService
 from app.models.database import get_db
 from app.core.auth import get_current_user
+from app.core.rate_limit import limiter
 from sqlalchemy.orm import Session
+from fastapi import Request as FRequest
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
@@ -24,6 +26,10 @@ _lock_cleanup_task = None
 
 _prompt_cache: dict[str, str] = {}
 _prompt_cache_loaded = False
+
+_rate_limit_per_chat: dict[str, float] = {}
+_rate_limit_window = 60
+_rate_limit_max = 30
 
 
 class _LockWithTimestamp(asyncio.Lock):
@@ -73,8 +79,9 @@ def start_lock_cleanup():
 
 
 @router.post("/webhook")
+@limiter.limit(os.environ.get("TELEGRAM_RATE_LIMIT", "30/minute"))
 async def telegram_webhook(
-    request: Request,
+    request: FRequest,
     x_telegram_bot_api_secret_token: Optional[str] = Header(None, alias="X-Telegram-Bot-Api-Secret-Token"),
     db: Session = Depends(get_db)
 ):
@@ -105,6 +112,15 @@ async def telegram_webhook(
     chat_id = str(chat["id"])
     text = message["text"]
     message_id = message["message_id"]
+
+    import time
+    current_time = time.time()
+    last_request = _rate_limit_per_chat.get(chat_id, 0)
+    if current_time - last_request < _rate_limit_window:
+        if last_request > 0:
+            logger.info(f"Chat {chat_id} rate limited")
+            return {"status": "ok", "rate_limited": True}
+    _rate_limit_per_chat[chat_id] = current_time
 
     lock = await _get_conversation_lock(chat_id)
     if lock.locked():

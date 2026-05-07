@@ -11,7 +11,20 @@ services:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/tower_db
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_API_KEY_FILE=/run/secrets/ollama_api_key
+      - TELEGRAM_BOT_TOKEN_FILE=/run/secrets/telegram_bot_token
+      - TELEGRAM_BOT_USERNAME_FILE=/run/secrets/telegram_bot_username
+      - TELEGRAM_SECRET_TOKEN_FILE=/run/secrets/telegram_secret_token
+      - SYNOLOGY_USERNAME_FILE=/run/secrets/synology_username
+      - SYNOLOGY_PASSWORD_FILE=/run/secrets/synology_password
       - JWT_SECRET=${JWT_SECRET}
+    secrets:
+      - ollama_api_key
+      - telegram_bot_token
+      - telegram_bot_username
+      - telegram_secret_token
+      - synology_username
+      - synology_password
     volumes:
       - ./prompt:/home/projects/tower_project/
       - ./prompt:/home/projects/tower_project/prompt
@@ -62,6 +75,8 @@ services:
       - POSTGRES_DB=tower_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    secrets:
+      - postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -94,6 +109,22 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - tower_network
+
+secrets:
+  ollama_api_key:
+    file: ./secrets/ollama_api_key.txt
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token.txt
+  telegram_bot_username:
+    file: ./secrets/telegram_bot_username.txt
+  telegram_secret_token:
+    file: ./secrets/telegram_secret_token.txt
+  synology_username:
+    file: ./secrets/synology_username.txt
+  synology_password:
+    file: ./secrets/synology_password.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
 
 volumes:
   postgres_data:
