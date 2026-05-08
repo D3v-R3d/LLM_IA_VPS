@@ -56,6 +56,8 @@ class ToolRegistry:
             ScrapeAndStoreTool, SearchStoredContentTool
         )
         from app.services.agent_tools.tools.model_switch_tool import ModelSwitchTool
+        from app.services.agent_tools.tools.qdrant_tools import QdrantSearchTool, QdrantScrollTool
+        from app.services.agent_tools.tools.nas_tools import NasListShareTool, NasListFolderTool, NasSearchTool
 
         tools = [
             ReadTool(),
@@ -82,6 +84,11 @@ class ToolRegistry:
             ScrapeAndStoreTool(),
             SearchStoredContentTool(),
             ModelSwitchTool(),
+            QdrantSearchTool(),
+            QdrantScrollTool(),
+            NasListShareTool(),
+            NasListFolderTool(),
+            NasSearchTool(),
         ]
 
         for tool in tools:

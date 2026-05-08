@@ -50,12 +50,10 @@ class ToolExecutor:
 
     def __init__(
         self,
-        tools_service,
         registry,
         default_timeout: int = 30,
         max_tools_per_batch: int = 6,
     ):
-        self.tools_service = tools_service
         self.registry = registry
         self.default_timeout = default_timeout
         self.max_tools_per_batch = max_tools_per_batch
@@ -145,19 +143,11 @@ class ToolExecutor:
         if isinstance(arguments, str):
             arguments = json.loads(arguments)
         try:
-            result = await self.tools_service.execute_tool(tool_name, arguments)
-        except Exception:
-            result = {"error": "Unknown tool"}
-
-        if isinstance(result, dict) and "Unknown tool" in str(result.get("error", "")):
-            try:
-                registry_result = await self.registry.execute(tool_name, **arguments)
-                result = {
-                    "success": registry_result.success,
-                    "data": registry_result.data,
-                    "error": registry_result.error
-                }
-            except Exception as e:
-                result = {"success": False, "error": str(e)}
-
-        return result
+            result = await self.registry.execute(tool_name, **arguments)
+            return {
+                "success": result.success,
+                "data": result.data,
+                "error": result.error
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}

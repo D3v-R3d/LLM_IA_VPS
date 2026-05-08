@@ -13,7 +13,7 @@
 
 ---
 
-## 📋 Outils Disponibles (24)
+## 📋 Outils Disponibles (29)
 
 ### 1. Fichiers
 
@@ -82,6 +82,13 @@
 | `model_switch` | Changer de modèle | `action` (list/switch), `model_id` |
 | `user_write_notes` | Écrire notes | `content` |
 
+### 9. Recherche Vectorielle (Qdrant)
+
+| Outil | Usage | Paramètres |
+|-------|-------|------------|
+| `qdrant_search` | Recherche sémantique | `query`, `collection`, `limit` |
+| `qdrant_scroll` | Lister collection | `collection`, `limit` |
+
 ---
 
 ## 🔥 Workflows Courants
@@ -112,6 +119,12 @@ grep(pattern="ERROR", path="/home/projects/tower_project", include="*.log")
 nas_list_share()
 nas_list_folder(folder_path="/chat")
 nas_search(folder_path="/chat", keyword="backup")
+```
+
+### Qdrant (Recherche Vectorielle)
+```bash
+qdrant_search(query="Python best practices", collection="documents", limit=5)
+qdrant_scroll(collection="messages", limit=20)
 ```
 
 ### Web

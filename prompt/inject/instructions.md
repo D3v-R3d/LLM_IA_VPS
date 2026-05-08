@@ -61,33 +61,21 @@ Les outils NE sont PAS exécutés si le JSON est dans le `content`. Il doit êtr
 
 ---
 
-## 🔧 Tools Disponibles (24)
+## 🔧 Tools Disponibles
 
-| Tool | Usage | Paramètres |
-|------|-------|------------|
-| `bash` | Commandes système | `command` |
-| `ls` | Lister dossier | `path` |
-| `read_file` | Lire fichier | `file_path`, `offset`, `limit` |
-| `write_file` | Écrire fichier | `file_path`, `content` |
-| `edit_file` | Modifier fichier | `file_path`, `old_string`, `new_string` |
-| `glob` | Trouver fichiers | `pattern`, `path` |
-| `grep` | Chercher texte | `pattern`, `path`, `include` |
-| `docker` | Gestion Docker | `command` |
-| `postgres_query` | Requête SQL | `query` |
-| `postgres_list_tables` | Lister tables | (aucun) |
-| `postgres_describe_table` | Structure table | `table` |
-| `web_search` | Recherche web | `query`, `num_results` |
-| `web_fetch` | Lire page web | `url`, `max_length` |
-| `api_fetch` | Appel API | `url`, `method`, `headers`, `body` |
-| `scrape_and_store` | Scraper URLs | `urls`, `collection_name`, `user_id`, `max_length` |
-| `search_stored_content` | Rechercher向量 | `query`, `collection_name`, `limit` |
-| `nas_list_share` | Lister shares NAS | (aucun) |
-| `nas_list_folder` | Contenu dossier NAS | `folder_path` |
-| `nas_search` | Chercher NAS | `folder_path`, `keyword` |
-| `telegram_send_message` | Message Telegram | `chat_id`, `text` |
-| `telegram_send_notification` | Notification | `chat_id`, `title`, `message`, `notification_type` |
-| `model_switch` | Changer modèle | `action`, `model_id` |
-| `user_write_notes` | Écrire notes | `content` |
+**Liste complète des outils:** Voir `/home/projects/tower_project/prompt/inject/tool.md`
+
+| Catégorie | Outils |
+|-----------|--------|
+| Fichiers | read_file, write_file, edit_file, glob, grep, ls |
+| Système | bash, docker, git, pkill |
+| Web | web_search, web_fetch, api_fetch |
+| BD | postgres_query, postgres_list_tables, postgres_describe_table |
+| Telegram | telegram_send_message, telegram_send_notification, telegram_get_user_info |
+| Scraping | scrape_and_store, search_stored_content |
+| NAS | nas_list_share, nas_list_folder, nas_search |
+| Vecteur | qdrant_search, qdrant_scroll |
+| Modèle | model_switch, user_write_notes |
 
 ---
 
