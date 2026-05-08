@@ -130,7 +130,6 @@ async def telegram_webhook(
     message = body.get("message")
 
     if callback_query:
-        logger.info(f"Callback query detected: {callback_query.get('data')}")
         return await handle_callback_query(callback_query, db)
 
     if not message:
@@ -164,7 +163,7 @@ async def telegram_webhook(
     async with lock:
         command, args = telegram_service.parse_command(text)
 
-        max_message_length = 4000
+        max_message_length = 10000
         if len(text) > max_message_length:
             await telegram_service.send_message(
                 chat_id,
@@ -481,7 +480,7 @@ async def handle_compress_command(chat_id: str, db: Session) -> bool:
 
     await telegram_service.send_chat_action(chat_id, "typing")
 
-    summary = await conversation_service.compress_conversation(db, conversation.id, keep_last=15)
+    summary = await conversation_service.compress_conversation(db, conversation.id, keep_last=CONTEXT_CONFIG["keep_last_messages"])
 
     new_count = conversation_service.get_token_count(conversation)
 
@@ -671,6 +670,7 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     message_service = MessageService()
 
     prefs = user_service.get_preferences(db, user.id)
+    print(prefs)
     current_session = prefs.get("current_session")
 
     if current_session:
@@ -723,6 +723,7 @@ async def handle_text_message(chat_id: str, text: str, db: Session) -> bool:
     try:
         from app.services.agent_service import AgentService
 
+        logger.warning("ABRACADABRA: Agent about to run!")
         agent = AgentService(telegram_service=telegram_service)
         try:
             assistant_reply = await agent.run_agent_loop(
@@ -774,7 +775,7 @@ async def handle_callback_query(callback_query: dict, db: Session) -> dict:
     chat_id = str(callback_query["message"]["chat"]["id"])
     data = callback_query.get("data", "")
 
-    logger.info(f"Callback query received: data={data}, chat_id={chat_id}")
+    logger.info(f"Callback query: data={data}, chat_id={chat_id}")
 
     if data.startswith("/ls"):
         await handle_ls_command(chat_id, data[3:].strip(), db)

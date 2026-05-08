@@ -142,7 +142,7 @@ class AgentService:
             model = self._get_user_model(user_id) or model
 
         logger.info(
-            f"AGENT_START: chat_id={chat_id} | "
+            f"AGENT_START: chat_id={chat_id} | model={model} | "
             f"history_len={len(messages_history)} | tools={len(tools)}"
         )
 
@@ -185,8 +185,11 @@ class AgentService:
                 db_gen = get_db()
                 db = next(db_gen)
             prefs = user_service.get_preferences(db, UUID(user_id))
-            return prefs.get("model")
-        except Exception:
+            model = prefs.get("model")
+            logger.warning(f"_get_user_model: user_id={user_id}, model={model}")
+            return model
+        except Exception as e:
+            logger.warning(f"_get_user_model error: {e}")
             return None
 
     async def _run_core_loop(
@@ -227,8 +230,24 @@ class AgentService:
                 return "Service indisponible. Réessayez.", state
 
             message = response.get("message", {})
+            raw_message = dict(message)
             tool_calls = message.get("tool_calls", [])
             content = message.get("content", "")
+
+            # BACKUP: If no tool_calls but content looks like JSON tool calls, parse it
+            if not tool_calls and content and content.strip().startswith("{"):
+                import json
+                try:
+                    parsed = json.loads(content)
+                    if "tool_calls" in parsed:
+                        tool_calls = parsed["tool_calls"]
+                        content = ""
+                        logger.warning(f"TOOL_CALLS_EXTRACTED_FROM_CONTENT: {tool_calls}")
+                except:
+                    pass
+
+            logger.warning(f"LLM_RAW_RESPONSE: {raw_message}")
+            logger.warning(f"TOOL_CALLS_EXTRACTED: {tool_calls}")
 
             context.append({
                 "role": "assistant",

@@ -17,11 +17,11 @@ from app.services.prompt_service import PromptService
 logger = logging.getLogger(__name__)
 
 CONTEXT_CONFIG = {
-    "max_tokens": 1000,
-    "keep_last_messages": 10,
-    "max_messages": 20,
+    "max_tokens": 100000,
+    "keep_last_messages": 100,
+    "max_messages": 100,
     "chars_per_token": 3.5,
-    "summary_max_chars": 4000,
+    "summary_max_chars": 8000,
 }
 
 

@@ -137,7 +137,7 @@ class ConversationService(BaseService[Conversation]):
         self,
         db: Session,
         conversation_id: UUID,
-        keep_last: int = 15
+        keep_last: int = 100
     ) -> Optional[str]:
         """Compress conversation - delegates to ContextService."""
         from app.services.context_service import ContextService

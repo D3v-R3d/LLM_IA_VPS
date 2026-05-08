@@ -132,6 +132,7 @@ class UserService:
         if db_user.preferences is None:
             db_user.preferences = {}
         db_user.preferences[key] = value
+        db.flush()
         db.commit()
         db.refresh(db_user)
         return True
@@ -143,6 +144,7 @@ class UserService:
         if db_user.preferences is None:
             db_user.preferences = {}
         db_user.preferences.update(prefs_dict)
+        db.flush()
         db.commit()
         return True
 

@@ -45,7 +45,7 @@ class CoreAgentLoop:
         messages_history: List[Dict],
         user_message: str,
         tools: List[Dict],
-        model: str = "minimax-m2.7",
+        model: str = "gemma4:31b",
     ) -> Tuple[str, Dict]:
         """
         Returns: (answer, execution_state)
@@ -156,22 +156,27 @@ class CoreAgentLoop:
         """Lightweight result summarization."""
         from app.services.agent_tools.tools.base_tool import ToolResult
         if isinstance(result, ToolResult):
-            if result.error:
-                text = f"Error: {result.error}"
-            elif result.data:
-                if isinstance(result.data, dict):
-                    if "stdout" in result.data:
-                        text = result.data["stdout"]
-                    elif "response" in result.data:
-                        text = result.data["response"]
+            result = {"success": result.success, "data": result.data, "error": result.error}
+
+        if isinstance(result, dict):
+            if result.get("error"):
+                text = f"Error: {result['error']}"
+            elif result.get("data"):
+                data = result["data"]
+                if isinstance(data, dict):
+                    if "stdout" in data:
+                        text = data["stdout"]
+                    elif "response" in data:
+                        text = data["response"]
                     else:
-                        text = str(result.data)
+                        text = str(data)
                 else:
-                    text = str(result.data)
+                    text = str(data)
             else:
                 text = "Done"
         else:
             text = str(result)
+
         text = re.sub(r"\s+", " ", text).strip()
         if len(text) > self.max_tool_chars:
             text = text[:self.max_tool_chars] + "... [truncated]"
