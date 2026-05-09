@@ -26,9 +26,19 @@ from app.models.message import Message, MessageRole
 from app.models.document import Document
 from app.models.user_model_prefs import UserModelPrefs
 from app.models.llm_log import LlmLog
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Create all tables (idempotent - only creates missing tables)
 Base.metadata.create_all(bind=engine)
+
+# Initialize Qdrant collections
+try:
+    from app.services.qdrant_init import init_qdrant_collections
+    init_qdrant_collections()
+except Exception as e:
+    logger.warning(f"Qdrant init skipped: {e}")
 
 __all__ = [
     "Base",

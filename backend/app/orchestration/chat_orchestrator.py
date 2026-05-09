@@ -88,8 +88,10 @@ class ChatOrchestrator:
 
             prefs = {}
             if user.model_prefs:
-                prefs["model"] = user.model_prefs.model
-                prefs["provider"] = user.model_prefs.provider
+                if user.model_prefs.model:
+                    prefs["model"] = user.model_prefs.model
+                if user.model_prefs.provider:
+                    prefs["provider"] = user.model_prefs.provider
                 if user.model_prefs.current_session:
                     prefs["current_session"] = user.model_prefs.current_session
 

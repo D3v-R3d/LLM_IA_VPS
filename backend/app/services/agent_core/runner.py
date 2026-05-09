@@ -58,7 +58,7 @@ class AgentRunner:
         self,
         llm,
         tool_executor,
-        max_steps: int = 5,
+        max_steps: int = 3,
         max_context: int = 30,
         max_tool_chars: int = 1200,
         llm_timeout: int = 200,
@@ -82,17 +82,14 @@ class AgentRunner:
         return self._llm
 
     async def _get_default_model(self, provider_name: Optional[str] = None) -> str:
-        """Get default model from provider's available models."""
+        """Get default model from provider's available models.
+        
+        Note: model should come from user_model_prefs, not here.
+        This is only a fallback if no model is specified.
+        """
         llm = self._get_llm(provider_name)
         prov_name = provider_name or llm.name
-        known_models = {
-            "google": "gemma-4-31b-it",
-            "groq": "llama-3.1-8b-instant",
-            "ollama": "qwen2.5:3b",
-        }
-        if prov_name in known_models:
-            return known_models[prov_name]
-
+        
         try:
             logger.info("Fetching available models from provider")
             models = await llm.list_models()
@@ -110,9 +107,40 @@ class AgentRunner:
         except Exception as e:
             logger.error(f"_get_default_model error: {e}")
 
-        # Fallback to known working model
-        logger.info("Using fallback model")
-        return known_models.get(prov_name, "gemma-4-31b-it")
+        # No fallback - model must come from user_model_prefs
+        logger.warning("No model available from provider")
+        return None
+
+    def _normalize_tool_args(self, tool_calls: List[Dict], provider: str) -> List[Dict]:
+        """Convert string args to int for providers that send wrong types (e.g., Groq)."""
+        if provider != "groq":
+            return tool_calls
+        
+        int_fields = {"timeout", "limit", "max_length", "num_results", "offset"}
+        
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            args_raw = func.get("arguments", {})
+            
+            if isinstance(args_raw, str):
+                try:
+                    args = json.loads(args_raw)
+                except:
+                    args = args_raw
+            else:
+                args = args_raw
+            
+            if isinstance(args, dict):
+                for key in int_fields:
+                    if key in args and isinstance(args[key], str):
+                        try:
+                            args[key] = int(args[key])
+                        except (ValueError, TypeError):
+                            pass
+                
+                func["arguments"] = args
+        
+        return tool_calls
 
     async def run(
         self,
@@ -162,8 +190,8 @@ class AgentRunner:
                 tools_sent=[t.get("function", {}).get("name") for t in tools] if tools else [],
             )
 
-        if not model:
-            model = await self._get_default_model(provider_name)
+        if not model or model == "default":
+            return "Aucun modèle disponible. Veuillez sélectionner un modèle."
 
         if not model:
             return "Aucun modèle disponible."
@@ -205,6 +233,7 @@ class AgentRunner:
 
             message = response.get("message", {})
             tool_calls = message.get("tool_calls", [])
+            
             content = message.get("content", "")
 
             # Extract tool calls from raw content (before cleaning)
@@ -218,6 +247,10 @@ class AgentRunner:
             # Clean content for context and final response (remove thought/tool_code tags)
             cleaned_content = self.clean_response_content(content)
 
+            # Normalize tool_calls for Groq before adding to context
+            if tool_calls and provider_name == "groq":
+                tool_calls = self._normalize_tool_calls(tool_calls)
+            
             context.append({
                 "role": "assistant",
                 "content": cleaned_content or "",
@@ -266,6 +299,8 @@ class AgentRunner:
                     )
                 return content.strip() if content else "Tools budget exhausted."
 
+            if provider_name == "groq":
+                tool_calls = self._normalize_tool_args(tool_calls, provider_name or "")
             results = await self._executor.execute_batch(tool_calls)
 
             for tc, result in zip(tool_calls, results):

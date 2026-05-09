@@ -68,8 +68,19 @@ class ContextCompressionService:
             SUMMARY_TEXT=summary_text[:CONTEXT_CONFIG['summary_max_chars']]
         )
 
-        model_name = settings.LLM_MODEL or "gemma-4-31b-it"
-        provider = provider_factory.get_provider()
+        # Get model and provider from user's preferences
+        user_id = conversation.user_id if hasattr(conversation, 'user_id') else None
+        model_name = "gemma-4-31b-it"
+        provider_name = "google"
+        
+        if user_id and db:
+            from app.models.user_model_prefs import UserModelPrefs
+            user_prefs = db.query(UserModelPrefs).filter(UserModelPrefs.user_id == user_id).first()
+            if user_prefs:
+                model_name = user_prefs.model or "gemma-4-31b-it"
+                provider_name = user_prefs.provider or "google"
+        
+        provider = provider_factory.get_provider(provider_name)
         summary = ""
         try:
             response = await provider.chat(

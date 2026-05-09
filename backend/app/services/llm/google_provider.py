@@ -91,6 +91,12 @@ class GoogleProvider(LLMProvider):
             safe_options = {k: v for k, v in options.items() if k not in ("model", "messages", "tools", "stream")}
             payload.update(safe_options)
 
+        # Debug: log payload size and first message
+        logger.info(f"Google API payload: model={model}, messages={len(messages)}, tools={len(tools)}")
+        if messages:
+            first_msg = messages[0] if isinstance(messages[0], dict) else str(messages[0])
+            logger.debug(f"First message preview: {str(first_msg)[:200]}")
+
         response = await self._client.post(
             f"{self.base_url}/chat/completions",
             json=payload,

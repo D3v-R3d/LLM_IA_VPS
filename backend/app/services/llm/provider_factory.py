@@ -12,6 +12,7 @@ from app.services.llm.llm_provider import LLMProvider
 from app.services.llm.ollama_provider import OllamaProvider
 from app.services.llm.groq_provider import GroqProvider
 from app.services.llm.google_provider import GoogleProvider
+from app.services.llm.anthropic_provider import AnthropicProvider
 
 
 class LLMProviderFactory:
@@ -54,8 +55,10 @@ class LLMProviderFactory:
             return GroqProvider()
         elif name == "google":
             return GoogleProvider()
+        elif name == "anthropic":
+            return AnthropicProvider()
         else:
-            raise ValueError(f"Unknown provider: {name}. Available: ollama, groq, google")
+            raise ValueError(f"Unknown provider: {name}. Available: ollama, groq, google, anthropic")
 
     @classmethod
     def get_default_provider(cls) -> str:
@@ -67,7 +70,7 @@ class LLMProviderFactory:
     @classmethod
     def list_providers(cls) -> list:
         """List available provider names."""
-        return ["ollama", "groq", "google"]
+        return ["ollama", "groq", "google", "anthropic"]
 
     @classmethod
     def get_default_provider_name(cls) -> str:

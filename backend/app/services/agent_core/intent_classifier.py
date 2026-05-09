@@ -1,79 +1,96 @@
 """
 Intent Classifier
 
-Keyword-based intent classification for tool routing.
+Keyword-based intent classification with word boundary matching.
 No LLM calls needed — fast, deterministic, lightweight.
 """
 
+import re
 from typing import List, Dict, Set
 
 INTENT_PATTERNS: Dict[str, List[str]] = {
     "file_operation": [
-        "read", "write", "edit", "file", "glob", "grep", "ls",
-        "list", "directory", "folder", "create file", "modify",
-        "delete file", "rename", "move", "copy",
-        "fichier", "dossier", "lire", "ecrire", "editer",
-        "contenu du", "liste les", "affiche",
+        r"\bread\b", r"\bwrite\b", r"\bedit\b", r"\bglob\b", r"\bgrep\b", r"\bls\b", r"\bcat\b",
+        r"\bchmod\b", r"\bchown\b", r"\bmkdir\b", r"\brmdir\b",
+        r"\blist\b", r"\bdirectory\b", r"\bfolder\b", r"\bcreate file\b", r"\bmodify\b",
+        r"\bdelete file\b", r"\brename\b", r"\bmove\b", r"\bcopy\b",
+        r"\bfichier\b", r"\bdossier\b", r"\blire\b", r"\becrire\b", r"\bediter\b",
+        r"\bcontenu du\b", r"\bliste les\b", r"\baffiche\b", r"\bouvre\b", r"\bvois\b",
+        r"\bchemin\b", r"\bchemin absolu\b", r"\bchemin relatif\b",
     ],
     "web_search": [
-        "search", "find", "look up", "google", "what is",
-        "who is", "latest", "news", "tell me about",
-        "information about", "research",
-        "cherche", "recherche", "trouve", "internet",
-        "web", "information sur", "va voir",
-        "quel est", "qui est", "actualite",
-        "meme", "image", "photo", "picture", "gif",
+        r"\bsearch\b", r"\bfind\b", r"\blook up\b", r"\bgoogle\b", r"\bwhat is\b",
+        r"\bwho is\b", r"\blatest\b", r"\bnews\b", r"\btell me about\b",
+        r"\binformation about\b", r"\bresearch\b", r"\bwikihow\b", r"\bstackoverflow\b",
+        r"\bcherche\b", r"\brecherche\b", r"\btrouve\b", r"\binternet\b",
+        r"\bweb\b", r"\binformation sur\b", r"\bva voir\b",
+        r"\bquel est\b", r"\bqui est\b", r"\bactualite\b",
+        r"\bmeme\b", r"\bimage\b", r"\bphoto\b", r"\bpicture\b", r"\bgif\b", r"\bvideo\b",
+        r"\btuto\b", r"\btutorial\b", r"\bdoc\b", r"\bdocumentation\b",
+        r"\bpdf\b", r"\blivre\b", r"\blivres\b",
     ],
     "web_fetch": [
-        "fetch", "scrape", "get content", "extract",
-        "download page", "open url", "visit",
-        "va sur", "ouvre", "url",
+        r"\bfetch\b", r"\bscrape\b", r"\bscrappe\b", r"\bget content\b", r"\bextract\b",
+        r"\bdownload page\b", r"\bopen url\b", r"\bvisit\b", r"\bpage web\b",
+        r"\burl\b", r"\bsite\b", r"\bsite web\b",
+        r"\b recupere\b", r"\b recuperer\b", r"\bextraire\b",
     ],
     "code_execution": [
-        "run", "execute", "bash", "command", "terminal",
-        "script", "shell",
-        "execute", "commande", "terminal",
+        r"\brun\b", r"\bexecute\b", r"\bbash\b", r"\bcommand\b", r"\bterminal\b",
+        r"\bscript\b", r"\bshell\b", r"\bpython\b", r"\bnode\b", r"\bnpm\b",
+        r"\bcompile\b", r"\bbuild\b", r"\bruntime\b",
+        r"\bexecute\b", r"\bcommande\b", r"\bconsole\b",
     ],
     "docker": [
-        "docker", "container", "image", "compose",
-        "conteneur",
+        r"(?<!/)\bdocker ps\b", r"(?<!/)\bdocker logs\b", r"(?<!/)\bdocker run\b", r"(?<!/)\bdocker pull\b",
+        r"(?<!/)\bdocker stop\b", r"(?<!/)\bdocker start\b", r"(?<!/)\bdocker restart\b",
+        r"(?<!/)\bdocker exec\b", r"(?<!/)\bdocker images\b", r"(?<!/)\bdocker container",
+        r"(?<!/)\bdocker compose\b", r"(?<!/)\bdocker-compose",
+        r"\bdockerfile\b", r"\bdocker-compose\.yml\b", r"\bdocker-compose\.yaml\b",
     ],
     "git": [
-        "git", "commit", "push", "pull", "branch", "merge",
-        "repo", "repository",
+        r"\bgit\b", r"\bgit commit\b", r"\bgit push\b", r"\bgit pull\b", r"\bgit branch\b", r"\bgit merge\b",
+        r"\bgit status\b", r"\bgit log\b", r"\bgit checkout\b", r"\bgit clone\b", r"\bgit diff\b",
+        r"\bgithub\b", r"\bgitlab\b", r"\bbitbucket\b",
+        r"\brepo\b", r"\brepository\b", r"\bcommit\b", r"\bmerge request\b", r"\bpull request\b",
     ],
     "database": [
-        "query", "sql", "postgres", "database", "db", "table",
-        "select", "insert", "update", "delete from",
-        "requete", "base de donnees", "bdd", "base de données",
-        "postgres", "utilisateurs", "users", "table", "tables",
-        "select", "insert", "update", "delete",
+        r"\bpostgres\b", r"\bpostgres query\b", r"\bpostgres list\b", r"\bpostgres describe\b",
+        r"\bpostgresql\b", r"\bsql\b", r"\bsql query\b", r"\bexecuter sql\b", r"\brequete sql\b",
+        r"\bbase de donnees\b", r"\bbase de données\b", r"\bbdd\b",
+        r"\blist tables\b", r"\bdescribe table\b", r"\bselect\b", r"\binsert\b", r"\bupdate\b", r"\bdelete\b",
+        r"\brequête\b", r"\btable\b", r"\bcolonnes\b", r"\blignes\b",
     ],
     "nas": [
-        "nas", "synology", "share", "drive", "file station",
-        "network drive", "storage",
-        "partage",
+        r"\bnas\b", r"\bsynology\b", r"\bfile station\b", r"\bquickconnect\b",
+        r"\bshare\b", r"\bshared folder\b", r"\bdrive\b", r"\bnetwork drive\b", r"\bstorage\b",
+        r"\bpartage\b", r"\bdossier partage\b", r"\bsamba\b",
     ],
     "telegram": [
-        "send message", "notify", "broadcast", "telegram",
-        "send notification",
+        r"\bsend message\b", r"\bsend\b.*message", r"\bnotify\b", r"\bnotification\b",
+        r"\bbroadcast\b", r"\btelegram\b", r"\bsend notification\b",
+        r"\benvoie\b", r"\benvoi\b", r"\bmessage\b",
     ],
     "note_taking": [
-        "remember", "note", "save", "write note",
-        "take note", "store this",
-        "souviens", "note", "retenir", "sauvegarde",
+        r"\bremember\b", r"\bremembre\b", r"\bnote\b", r"\bsave\b", r"\bwrite note\b",
+        r"\btake note\b", r"\bstore this\b", r"\bécris\b", r"\bécrire\b",
+        r"\bsouviens\b", r"\bretenir\b", r"\bsauvegarde\b", r"\bsauve\b",
+        r"\bcrée\b", r"\bcréer\b", r"\bmémorise\b",
     ],
     "search_stored": [
-        "search stored", "find in my", "remember about",
-        "what did i save", "search content",
-        "cherche dans", "recherche dans", "trouve dans",
-        "parmi mes", "dans mes notes",
+        r"\bsearch stored\b", r"\bfind in my\b", r"\bremember about\b",
+        r"\bwhat did i save\b", r"\bsearch content\b", r"\bsearch my\b",
+        r"\bcherche dans\b", r"\brecherche dans\b", r"\btrouve dans\b",
+        r"\bparmi mes\b", r"\bdans mes notes\b", r"\bdans mes fichiers\b",
+        r"\bcherche mes\b", r"\brecherche mes\b",
     ],
     "conversation": [
-        "hello", "hi", "hey", "bonjour", "salut",
-        "help", "who are you", "what can you",
-        "how are you", "thanks", "merci",
-        "ca va", "qui es tu", "peux tu",
+        r"\bhello\b", r"\bhi\b", r"\bhey\b", r"\bbonjour\b", r"\bsalut\b", r"\bbonsoir\b",
+        r"\bhelp\b", r"\baide\b", r"\bwho are you\b", r"\bwhat can you\b", r"\bque peux tu\b",
+        r"\bhow are you\b", r"\bça va\b", r"\bca va\b", r"\bvas tu\b",
+        r"\bthanks\b", r"\bmerci\b", r"\bthank you\b",
+        r"\bqui es tu\b", r"\bqui est tu\b", r"\bwhat are you\b",
+        r"\bau revoir\b", r"\bbye\b", r"\bgoodbye\b",
     ],
 }
 
@@ -101,7 +118,7 @@ INTENT_TO_TOOLS: Dict[str, Set[str]] = {
 
 
 def classify_intent(user_message: str) -> List[str]:
-    """Classify user intent based on keyword matching.
+    """Classify user intent based on keyword matching with word boundaries.
 
     Returns list of matched intent names, ordered by match confidence.
     Always includes 'conversation' as fallback.
@@ -113,8 +130,13 @@ def classify_intent(user_message: str) -> List[str]:
     for intent, patterns in INTENT_PATTERNS.items():
         score = 0
         for pattern in patterns:
-            if pattern in msg_lower:
-                score += 1
+            try:
+                if re.search(pattern, msg_lower):
+                    score += 1
+            except re.error:
+                # Fallback to simple match if regex is invalid
+                if pattern in msg_lower:
+                    score += 1
         if score > 0:
             scores[intent] = score
 
