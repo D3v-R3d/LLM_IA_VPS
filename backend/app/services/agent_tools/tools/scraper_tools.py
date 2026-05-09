@@ -16,6 +16,8 @@ class ScrapeAndStoreTool(BaseTool):
     creates embeddings, and stores in vector database.
     """
 
+    META = {"category": "web", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "scrape_and_store"
@@ -123,6 +125,8 @@ class SearchStoredContentTool(BaseTool):
     """
     Search stored web content using semantic search.
     """
+
+    META = {"category": "search", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

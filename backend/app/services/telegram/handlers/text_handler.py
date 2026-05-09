@@ -32,7 +32,7 @@ class TextHandler(BaseHandler):
         from app.services.agent_core.runner import AgentRunner
         from app.services.agent_core.context_builder import ContextBuilder
         from app.services.agent_core import ToolExecutor
-        from app.services.llm import ChatService
+        from app.services.llm.provider_factory import provider_factory
         from app.core.config import settings
 
         logger = logging.getLogger(__name__)
@@ -45,10 +45,13 @@ class TextHandler(BaseHandler):
 
             if self._orchestrator is None:
                 from app.services.agent_tools import get_registry
+                from app.services.agent_core import ToolExecutor
+                from app.services.llm.provider_factory import provider_factory
+
                 registry = get_registry()
-                llm = ChatService(base_url=settings.OLLAMA_CLOUD_HOST, api_key=settings.OLLAMA_API_KEY)
+                llm = provider_factory.get_provider(settings.LLM_PROVIDER)
                 tool_executor = ToolExecutor(registry=registry)
-                agent_runner = AgentRunner(llm=llm, tool_executor=tool_executor)
+                agent_runner = AgentRunner(llm=llm, tool_executor=tool_executor, provider_factory=provider_factory)
                 context_builder = ContextBuilder()
                 self._orchestrator = ChatOrchestrator(
                     conversation_service=context.conversation_service,
@@ -172,27 +175,45 @@ async def _handle_model_switch_callback(
     data: str, query_id: str, chat_id: str, context: HandlerContext
 ) -> Optional[str]:
     """Handle model_switch callback from inline keyboard."""
-    model_id = data[13:]
+    payload = data[13:]
+    parts = payload.split("||", 1)
+    if len(parts) == 2:
+        model_id = parts[1]
+        provider = parts[0]
+    else:
+        model_id = payload
+        provider = "ollama"
 
     is_linked, user = await _require_linked_account(chat_id, context)
     if not is_linked:
         await context.telegram_service.answer_callback_query(query_id, text="Account not linked", show_alert=True)
         return None
 
-    success = context.user_service.set_preference(context.db, user.id, "model", model_id)
+    from app.models.user_model_prefs import UserModelPrefs
 
-    if success:
-        await context.telegram_service.answer_callback_query(
-            query_id,
-            text=f"✓ Switched to {model_id}",
-            show_alert=True
-        )
-        await context.telegram_service.send_message(
-            chat_id,
-            f"✓ Model switched to `{model_id}`\nThis will be used for your next messages."
-        )
+    if user.model_prefs:
+        user.model_prefs.model = model_id
+        user.model_prefs.provider = provider
     else:
-        await context.telegram_service.answer_callback_query(query_id, text="Failed to save", show_alert=True)
+        prefs = UserModelPrefs(
+            user_id=user.id,
+            provider=provider,
+            model=model_id,
+            is_local=(provider == "ollama")
+        )
+        context.db.add(prefs)
+
+    context.db.commit()
+
+    await context.telegram_service.answer_callback_query(
+        query_id,
+        text=f"✓ Switched to {model_id}",
+        show_alert=True
+    )
+    await context.telegram_service.send_message(
+        chat_id,
+        f"✓ Model switched to `{model_id}` ({provider})\nThis will be used for your next messages."
+    )
 
     return None
 

@@ -12,6 +12,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
 class NasListShareTool(BaseTool):
     """List all shares on the Synology NAS."""
 
+    META = {"category": "nas", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "nas_list_share"
@@ -43,6 +45,8 @@ class NasListShareTool(BaseTool):
 
 class NasListFolderTool(BaseTool):
     """List contents of a folder on Synology NAS."""
+
+    META = {"category": "nas", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -80,7 +84,9 @@ class NasListFolderTool(BaseTool):
 
 
 class NasSearchTool(BaseTool):
-    """Search for files on Synology NAS."""
+    """Search files on Synology NAS."""
+
+    META = {"category": "nas", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

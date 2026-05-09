@@ -12,6 +12,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
 class WebFetchTool(BaseTool):
     """Fetch content from a URL."""
 
+    META = {"category": "web", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "web_fetch"
@@ -47,6 +49,8 @@ class WebFetchTool(BaseTool):
 class WebSearchTool(BaseTool):
     """Search the web."""
 
+    META = {"category": "web", "max_calls_per_run": 3, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "web_search"
@@ -81,6 +85,8 @@ class WebSearchTool(BaseTool):
 
 class APIFetchTool(BaseTool):
     """Call an external API."""
+
+    META = {"category": "web", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

@@ -16,7 +16,7 @@ def _get_cached_client(base_url: str, api_key: Optional[str] = None) -> httpx.As
     global _client_cache, _cache_lock
     cache_key = f"{base_url}:{api_key}"
     if cache_key not in _client_cache:
-        _client_cache[cache_key] = httpx.AsyncClient(timeout=180.0)
+        _client_cache[cache_key] = httpx.AsyncClient(timeout=300.0)
     return _client_cache[cache_key]
 
 

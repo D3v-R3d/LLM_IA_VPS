@@ -24,6 +24,11 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.models.document import Document
+from app.models.user_model_prefs import UserModelPrefs
+from app.models.llm_log import LlmLog
+
+# Create all tables (idempotent - only creates missing tables)
+Base.metadata.create_all(bind=engine)
 
 __all__ = [
     "Base",
@@ -35,4 +40,6 @@ __all__ = [
     "Message",
     "MessageRole",
     "Document",
+    "UserModelPrefs",
+    "LlmLog",
 ]

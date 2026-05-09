@@ -31,12 +31,22 @@ class Settings:
         self.QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
         self.OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
         self.OLLAMA_CLOUD_HOST = os.environ.get("OLLAMA_CLOUD_HOST", "https://ollama.com")
-        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:31b")
+        self.LLM_MODEL = os.environ.get("LLM_MODEL", "")
+        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "")
 
         self.OLLAMA_API_KEY = (
             os.environ.get("OLLAMA_API_KEY") or
             _read_secret_file(os.environ.get("OLLAMA_API_KEY_FILE", ""))
         )
+        self.GROQ_API_KEY = (
+            os.environ.get("GROQ_API_KEY") or
+            _read_secret_file(os.environ.get("GROQ_API_KEY_FILE", ""))
+        )
+        self.GOOGLE_API_KEY = (
+            os.environ.get("GOOGLE_API_KEY") or
+            _read_secret_file(os.environ.get("GOOGLE_API_KEY_FILE", ""))
+        )
+        self.LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "google")
         self.TELEGRAM_BOT_TOKEN = (
             os.environ.get("TELEGRAM_BOT_TOKEN") or
             _read_secret_file(os.environ.get("TELEGRAM_BOT_TOKEN_FILE", ""))
@@ -50,7 +60,11 @@ class Settings:
             _read_secret_file(os.environ.get("TELEGRAM_SECRET_TOKEN_FILE", ""))
         )
         self.TELEGRAM_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL")
-        self.JWT_SECRET = os.environ.get("JWT_SECRET", "change_me_in_production_with_strong_secret_key")
+        self.JWT_SECRET = (
+            os.environ.get("JWT_SECRET") or
+            _read_secret_file(os.environ.get("JWT_SECRET_FILE", "")) or
+            "change_me_in_production_with_strong_secret_key"
+        )
         self.PROMPT_DIR = os.environ.get("PROMPT_DIR", "/home/projects/tower_project/prompt")
 
 

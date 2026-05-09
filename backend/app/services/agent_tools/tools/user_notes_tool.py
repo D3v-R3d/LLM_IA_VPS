@@ -13,6 +13,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
 class UserNotesTool(BaseTool):
     """Write notes to user-configured file based on preferences."""
 
+    META = {"category": "util", "max_calls_per_run": 0, "parallel_safe": False}
+
     @property
     def name(self) -> str:
         return "user_write_notes"

@@ -129,13 +129,6 @@ class User(Base):
         doc="Temporary token for linking Telegram account"
     )
 
-    preferences = Column(
-        JSONB,
-        nullable=True,
-        default=dict,
-        doc="User preferences stored as JSON"
-    )
-
     # Relationships with other models
     # cascade="all, delete-orphan" ensures related records are deleted
     # when the user is deleted
@@ -163,6 +156,14 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         doc="All documents owned by this user"
+    )
+
+    model_prefs = relationship(
+        "UserModelPrefs",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        doc="User's LLM model preferences"
     )
 
     def __repr__(self) -> str:

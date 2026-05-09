@@ -57,9 +57,8 @@ class LockManager:
         return self._locks[key]
 
     async def acquire(self, key: str) -> asyncio.Lock:
-        """Acquire lock for a key. Returns the lock acquired."""
+        """Get lock for a key (does NOT acquire - caller uses async with)."""
         lock = await self.get(key)
-        await lock.acquire()
         return lock
 
     async def release(self, key: str) -> None:

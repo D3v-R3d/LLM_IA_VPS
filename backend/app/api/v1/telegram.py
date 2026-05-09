@@ -22,12 +22,9 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Request, Depends, HTTPException, status
-from fastapi import Request as FRequest
 
 from app.services.telegram_service import get_cached_telegram_service
 from app.orchestration.message_pipeline import get_message_pipeline
-from app.core.lock_manager import get_lock_manager
-from app.core.rate_limiter import get_rate_limiter
 from app.core.auth import get_current_user
 from app.core.config import settings
 from app.models.database import get_db
@@ -39,32 +36,37 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 telegram_service = get_cached_telegram_service()
 
+# Background task registry to prevent GC of asyncio tasks
+_background_tasks: set = set()
+
 
 @router.post("/webhook")
 async def telegram_webhook(request: Request) -> dict:
     """
     Receive updates from Telegram.
-
-    Returns immediately after dispatching to background processing.
-    Never blocks on:
-    - LLM
-    - Tools
-    - Compression
-    - Database work
     """
-    body = await request.json()
-    logger.info(f"Telegram webhook received: update_id={body.get('update_id', 'N/A')}")
-
     if not _verify_webhook(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid secret token"
         )
 
-    asyncio.create_task(
-        _process_update_background(body)
-    )
+    body = await request.json()
+    logger.info(f"Telegram webhook received: update_id={body.get('update_id')}")
 
+    async def process():
+        try:
+            logger.info(f"Background processing start")
+            pipeline = get_message_pipeline()
+            await pipeline.process(body)
+            logger.info(f"Background processing done")
+        except Exception as e:
+            logger.exception(f"Background error: {e}")
+        finally:
+            _background_tasks.discard(task)
+
+    task = asyncio.create_task(process())
+    _background_tasks.add(task)
     return {"ok": True}
 
 
@@ -76,9 +78,11 @@ def _verify_webhook(request: Request) -> bool:
 
 async def _process_update_background(body: dict) -> None:
     """Process update in background to not block the webhook response."""
+    logger.info(f"Background task started, update_id={body.get('update_id')}")
     try:
         pipeline = get_message_pipeline()
         await pipeline.process(body)
+        logger.info(f"Background task completed, update_id={body.get('update_id')}")
     except Exception as e:
         logger.exception(f"Background processing error: {e}")
 

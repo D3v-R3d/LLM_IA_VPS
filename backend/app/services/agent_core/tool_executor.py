@@ -1,13 +1,18 @@
 """
 Independent tool execution layer.
-Handles timeouts, parallel/sequential categorization.
+Handles timeouts, parallel/sequential categorization, standardized outputs.
 No knowledge of agent state, notifications, or budgets.
 """
 
 import asyncio
 import logging
-from typing import List, Dict, Any
+import time
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+
+from app.services.agent_core.tool_response import ToolResponse, ToolMetadata
+from app.services.agent_tools.tools.base_tool import ToolResult
+from app.services.agent_core.result_summarizer import ResultSummarizer
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +46,12 @@ TOOL_METADATA = {
 
 class ToolExecutor:
     """
-    Independent tool executor.
+    Independent tool executor with standardized outputs.
     - No knowledge of agent state
     - No notifications
     - No budgets
     - Strict timeout only
+    - Returns ToolResponse objects
     """
 
     def __init__(
@@ -57,14 +63,15 @@ class ToolExecutor:
         self.registry = registry
         self.default_timeout = default_timeout
         self.max_tools_per_batch = max_tools_per_batch
+        self._summarizer = ResultSummarizer()
 
     async def execute_batch(
         self,
         tool_calls: List[Dict],
-    ) -> List[Dict]:
+    ) -> List[ToolResponse]:
         """
         Execute a batch of tool calls.
-        Returns list of results in same order as tool_calls.
+        Returns list of ToolResponse in same order as tool_calls.
         """
         if not tool_calls:
             return []
@@ -76,16 +83,20 @@ class ToolExecutor:
         parallel, sequential = self._categorize(tool_calls)
 
         # Execute parallel tools first
-        results = []
+        results: List[ToolResponse] = []
         if parallel:
             parallel_results = await asyncio.gather(*[
                 self._execute_single(tc)
                 for tc in parallel
             ], return_exceptions=True)
-            # Convert exceptions to error dicts
             for r in parallel_results:
                 if isinstance(r, Exception):
-                    results.append({"success": False, "error": str(r)})
+                    results.append(ToolResponse(
+                        success=False,
+                        tool="unknown",
+                        summary=f"Exception: {r}",
+                        error=str(r)
+                    ))
                 else:
                     results.append(r)
         else:
@@ -94,8 +105,7 @@ class ToolExecutor:
         # Execute sequential tools
         if sequential:
             for tc in sequential:
-                result = await self._execute_single(tc)
-                results.append(result)
+                results.append(await self._execute_single(tc))
 
         return results
 
@@ -117,37 +127,70 @@ class ToolExecutor:
         self,
         tool_call: Dict,
         timeout: int = None,
-    ) -> Dict:
+    ) -> ToolResponse:
         timeout = timeout or self.default_timeout
         func = tool_call.get("function", {})
-        tool_name = func.get("name")
+        tool_name = func.get("name", "unknown")
         arguments = func.get("arguments", {})
+        start = time.perf_counter()
 
         try:
             result = await asyncio.wait_for(
                 self._execute(tool_name, arguments),
                 timeout=timeout + 5
             )
-            return result
+            duration = (time.perf_counter() - start) * 1000
+            response = ToolResponse(
+                success=result.success,
+                tool=tool_name,
+                summary=self._summarizer.summarize(tool_name, ToolResponse(
+                    success=result.success,
+                    tool=tool_name,
+                    summary="",
+                    data=result.data,
+                    error=result.error,
+                )),
+                data=result.data,
+                error=result.error,
+                metadata=ToolMetadata(duration_ms=duration)
+            )
 
         except asyncio.TimeoutError:
+            duration = (time.perf_counter() - start) * 1000
             logger.error(f"TOOL_TIMEOUT: {tool_name} ({timeout}s)")
-            return {"success": False, "error": f"Timeout after {timeout}s"}
+            response = ToolResponse(
+                success=False,
+                tool=tool_name,
+                summary=f"Timeout after {timeout}s",
+                error=f"Timeout after {timeout}s",
+                metadata=ToolMetadata(duration_ms=duration)
+            )
 
         except Exception as e:
+            duration = (time.perf_counter() - start) * 1000
             logger.exception(f"TOOL_ERROR: {tool_name}")
-            return {"success": False, "error": str(e)}
+            response = ToolResponse(
+                success=False,
+                tool=tool_name,
+                summary=f"Error: {str(e)[:200]}",
+                error=str(e),
+                metadata=ToolMetadata(duration_ms=duration)
+            )
 
-    async def _execute(self, tool_name: str, arguments: Dict) -> Dict:
+        logger.info(f"Tool {tool_name}: {response.to_log_dict()}")
+        return response
+
+    async def _execute(self, tool_name: str, arguments: Dict) -> ToolResult:
         import json
         if isinstance(arguments, str):
             arguments = json.loads(arguments)
-        try:
-            result = await self.registry.execute(tool_name, **arguments)
-            return {
-                "success": result.success,
-                "data": result.data,
-                "error": result.error
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        # Fix common LLM type errors: string numbers -> int
+        fixed = {}
+        for k, v in arguments.items():
+            if isinstance(v, str) and v.lstrip('-').isdigit():
+                fixed[k] = int(v)
+            elif isinstance(v, str) and v.replace('.', '', 1).lstrip('-').isdigit():
+                fixed[k] = float(v)
+            else:
+                fixed[k] = v
+        return await self.registry.execute(tool_name, **fixed)

@@ -30,7 +30,6 @@ from app.services.agent_tools.tools.telegram_tools import (
 from app.services.agent_tools.tools.web_search import WebSearchService
 from app.services.agent_tools.tools.url_fetch import URLFetchService
 from app.services.agent_tools.tools.api_caller import APICallerService
-from app.services.agent_tools.tools.unified_tools_service import ToolsService
 
 __all__ = [
     "BaseTool", "ToolResult", "SyncTool",
@@ -40,5 +39,5 @@ __all__ = [
     "PostgresQueryTool", "PostgresListTablesTool", "PostgresDescribeTableTool",
     "TelegramSendMessageTool", "TelegramSendNotificationTool",
     "TelegramGetUserInfoTool", "TelegramBotHealthTool",
-    "WebSearchService", "URLFetchService", "APICallerService", "ToolsService"
+    "WebSearchService", "URLFetchService", "APICallerService"
 ]

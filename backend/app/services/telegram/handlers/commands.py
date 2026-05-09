@@ -205,8 +205,7 @@ async def handle_sessions_command(update: TelegramUpdate, context: HandlerContex
         return None
 
     sessions = context.conversation_service.get_all_telegram_sessions(context.db, user.id)
-    prefs = context.user_service.get_preferences(context.db, user.id)
-    current = prefs.get("current_session", "default")
+    current = user.model_prefs.current_session if user.model_prefs else None
 
     if not sessions:
         text = "*Your Sessions*\n\nNo sessions yet. Start chatting to create one!"
@@ -236,7 +235,13 @@ async def handle_new_command(update: TelegramUpdate, context: HandlerContext) ->
     conversation = context.conversation_service.create_telegram_session(
         context.db, user.id, session_id, title
     )
-    context.user_service.set_preference(context.db, user.id, "current_session", session_id)
+    if not user.model_prefs:
+        from app.models.user_model_prefs import UserModelPrefs
+        user.model_prefs = UserModelPrefs(user_id=user.id, current_session=session_id)
+        context.db.add(user.model_prefs)
+    else:
+        user.model_prefs.current_session = session_id
+    context.db.commit()
 
     await context.telegram_service.send_notification(
         update.chat_id,
@@ -253,8 +258,7 @@ async def handle_reset_command(update: TelegramUpdate, context: HandlerContext) 
     if not is_linked:
         return None
 
-    prefs = context.user_service.get_preferences(context.db, user.id)
-    current_session = prefs.get("current_session")
+    current_session = user.model_prefs.current_session if user.model_prefs else None
 
     if current_session and context.conversation_service:
         conv = context.conversation_service.get_telegram_session(context.db, user.id, current_session)
@@ -262,7 +266,9 @@ async def handle_reset_command(update: TelegramUpdate, context: HandlerContext) 
             for msg in conv.messages:
                 context.message_service.delete(context.db, msg.id)
 
-    context.user_service.set_preference(context.db, user.id, "current_session", None)
+    if user.model_prefs:
+        user.model_prefs.current_session = None
+        context.db.commit()
 
     await context.telegram_service.send_notification(
         update.chat_id,
@@ -284,8 +290,7 @@ async def handle_compress_command(update: TelegramUpdate, context: HandlerContex
     if not context.conversation_service:
         return None
 
-    prefs = context.user_service.get_preferences(context.db, user.id)
-    current_session = prefs.get("current_session")
+    current_session = user.model_prefs.current_session if user.model_prefs else None
 
     if current_session:
         conversation = context.conversation_service.get_telegram_session(context.db, user.id, current_session)
@@ -437,16 +442,18 @@ async def handle_model_command(update: TelegramUpdate, context: HandlerContext) 
 
     if not update.text or update.text == "list":
         available = await tool._fetch_available_models()
+        provider = tool._get_provider_name()
 
         keyboard = []
         for m in available:
-            callback_data = f"model_switch:{m['id']}"
+            model_id = m['id']
+            callback_data = f"model_switch:{provider}||{model_id}"
             keyboard.append([{"text": f"✅ {m['name']}", "callback_data": callback_data}])
 
         reply_markup = {"inline_keyboard": keyboard}
         await context.telegram_service.send_message(
             update.chat_id,
-            "## 🤖 Select a model:\n\nTap to switch instantly:",
+            f"## 🤖 Select a model ({provider}):\n\nTap to switch instantly:",
             reply_markup=reply_markup
         )
         return None
@@ -467,16 +474,26 @@ async def handle_model_command(update: TelegramUpdate, context: HandlerContext) 
         if not is_linked:
             return None
 
-        success = context.user_service.set_preference(context.db, user.id, "model", model_id)
+        from app.models.user_model_prefs import UserModelPrefs
 
-        if success:
-            await context.telegram_service.send_message(
-                update.chat_id,
-                f"✓ Model switched to `{model_id}`\nThis will be used for your next messages."
-            )
+        provider = tool._get_provider_name()
+        if user.model_prefs:
+            user.model_prefs.model = model_id
+            user.model_prefs.provider = provider
         else:
-            await context.telegram_service.send_message(update.chat_id, "❌ Failed to save preference.")
+            prefs = UserModelPrefs(
+                user_id=user.id,
+                provider=provider,
+                model=model_id,
+                is_local=(provider == "ollama")
+            )
+            context.db.add(prefs)
 
+        context.db.commit()
+        await context.telegram_service.send_message(
+            update.chat_id,
+            f"✓ Model switched to `{model_id}` ({provider})\nThis will be used for your next messages."
+        )
         return None
 
     await context.telegram_service.send_message(

@@ -6,7 +6,7 @@ Sends messages to Telegram users.
 
 import httpx
 import logging
-from typing import Optional, Dict, Any, Any
+from typing import Optional, Dict, Any
 
 
 logger = logging.getLogger(__name__)

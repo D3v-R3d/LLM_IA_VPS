@@ -20,27 +20,6 @@ class TextCleaningService:
     noise and normalizing format.
     """
 
-    def clean(self, text: str) -> str:
-        """
-        Clean text content.
-
-        Args:
-            text: Raw text to clean
-
-        Returns:
-            Cleaned text
-        """
-        if not text:
-            return ""
-
-        text = self._normalize_unicode(text)
-        text = self._remove_control_chars(text)
-        text = self._remove_javascript_artifacts(text)
-        text = self._normalize_whitespace(text)
-        text = self._remove_extra_newlines(text)
-
-        return text.strip()
-
     def clean_batch(self, texts: List[str]) -> List[str]:
         """
         Clean multiple texts.

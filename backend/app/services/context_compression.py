@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_CONFIG = {
     "max_tokens": 100000,
-    "keep_last_messages": 100,
-    "max_messages": 100,
+    "keep_last_messages": 20,
+    "max_messages": 20,
     "chars_per_token": 3.5,
     "summary_max_chars": 8000,
 }
@@ -45,7 +45,7 @@ class ContextCompressionService:
         keep_last: Optional[int] = None
     ) -> Optional[str]:
         """Compress conversation by summarizing old messages."""
-        from app.services.llm import ChatService
+        from app.services.llm.provider_factory import provider_factory
 
         if keep_last is None:
             keep_last = CONTEXT_CONFIG["keep_last_messages"]
@@ -68,22 +68,18 @@ class ContextCompressionService:
             SUMMARY_TEXT=summary_text[:CONTEXT_CONFIG['summary_max_chars']]
         )
 
-        llm = ChatService(
-            base_url=settings.OLLAMA_CLOUD_HOST,
-            api_key=settings.OLLAMA_API_KEY
-        )
+        model_name = settings.LLM_MODEL or "gemma-4-31b-it"
+        provider = provider_factory.get_provider()
         summary = ""
         try:
-            response = await llm.chat(
-                model=settings.OLLAMA_MODEL,
+            response = await provider.chat(
+                model=model_name,
                 messages=[{"role": "user", "content": summary_prompt}]
             )
             summary = response.get("message", {}).get("content", "")
         except Exception as e:
             logger.error(f"Context compression error: {e}")
             summary = f"Previous context: {len(messages_to_summarize)} messages about various topics."
-        finally:
-            await llm.close()
 
         PromptService.write_context_summary(summary)
 

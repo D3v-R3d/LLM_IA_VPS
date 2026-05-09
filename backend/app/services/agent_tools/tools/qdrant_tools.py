@@ -12,6 +12,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
 class QdrantSearchTool(BaseTool):
     """Search Qdrant vector store for similar content."""
 
+    META = {"category": "search", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "qdrant_search"
@@ -77,6 +79,8 @@ class QdrantSearchTool(BaseTool):
 
 class QdrantScrollTool(BaseTool):
     """Scroll through all stored content in a Qdrant collection."""
+
+    META = {"category": "search", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

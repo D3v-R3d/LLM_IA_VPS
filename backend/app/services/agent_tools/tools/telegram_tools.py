@@ -16,6 +16,8 @@ telegram_service = get_cached_telegram_service()
 class TelegramSendMessageTool(BaseTool):
     """Send a message via Telegram."""
 
+    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "telegram_send_message"
@@ -48,6 +50,8 @@ class TelegramSendMessageTool(BaseTool):
 
 class TelegramSendNotificationTool(BaseTool):
     """Send a notification via Telegram."""
+
+    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -86,6 +90,8 @@ class TelegramSendNotificationTool(BaseTool):
 class TelegramGetUserInfoTool(BaseTool):
     """Get Telegram user info."""
 
+    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "telegram_get_user_info"
@@ -116,6 +122,8 @@ class TelegramGetUserInfoTool(BaseTool):
 
 class TelegramBotHealthTool(BaseTool):
     """Check Telegram bot health."""
+
+    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

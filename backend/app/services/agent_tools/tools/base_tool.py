@@ -40,7 +40,18 @@ class BaseTool(ABC):
     - description: what the tool does
     - parameters: dict describing expected parameters
     - execute(): the actual tool logic
+
+    Tool metadata (override in subclass):
+    - category: tool group for routing
+    - max_calls_per_run: 0 = unlimited
+    - parallel_safe: can run in parallel with other tools
     """
+
+    META = {
+        "category": "util",
+        "max_calls_per_run": 0,
+        "parallel_safe": True,
+    }
 
     def __init__(self):
         self._last_result: Optional[ToolResult] = None
@@ -58,6 +69,21 @@ class BaseTool(ABC):
         pass
 
     @property
+    def category(self) -> str:
+        """Tool group for routing (file, web, system, database, telegram, nas, search, util)."""
+        return self.META.get("category", "util")
+
+    @property
+    def max_calls_per_run(self) -> int:
+        """Max calls per agent run. 0 = unlimited."""
+        return self.META.get("max_calls_per_run", 0)
+
+    @property
+    def parallel_safe(self) -> bool:
+        """Can this tool run in parallel with others."""
+        return self.META.get("parallel_safe", True)
+
+    @property
     def parameters(self) -> Dict[str, Any]:
         """
         JSON schema for tool parameters.
@@ -67,6 +93,17 @@ class BaseTool(ABC):
             "type": "object",
             "properties": {},
             "required": []
+        }
+
+    def to_definition(self) -> Dict[str, Any]:
+        """Tool definition for LLM function calling (clean, no internal metadata)."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            }
         }
 
     @abstractmethod

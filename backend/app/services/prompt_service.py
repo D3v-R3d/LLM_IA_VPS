@@ -74,7 +74,7 @@ class PromptService:
 
         pref_text = ""
         if user_preferences:
-            pref_lines = [f"• {k}: {v}" for k, v in user_preferences.items() if k != "current_session"]
+            pref_lines = [f"• {k}: {v}" for k, v in user_preferences.items()]
             if pref_lines:
                 pref_text = "\nUser preferences:\n" + "\n".join(pref_lines)
 

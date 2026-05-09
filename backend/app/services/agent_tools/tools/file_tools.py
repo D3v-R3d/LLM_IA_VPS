@@ -15,6 +15,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult, SyncT
 class ReadTool(SyncTool):
     """Read contents of a file."""
 
+    META = {"category": "file", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "read_file"
@@ -70,6 +72,8 @@ class ReadTool(SyncTool):
 class WriteTool(SyncTool):
     """Write content to a file (creates or overwrites)."""
 
+    META = {"category": "file", "max_calls_per_run": 0, "parallel_safe": False}
+
     @property
     def name(self) -> str:
         return "write_file"
@@ -104,6 +108,8 @@ class WriteTool(SyncTool):
 
 class EditTool(SyncTool):
     """Edit a file by replacing old_string with new_string."""
+
+    META = {"category": "file", "max_calls_per_run": 3, "parallel_safe": False}
 
     @property
     def name(self) -> str:
@@ -161,6 +167,8 @@ class EditTool(SyncTool):
 class GlobTool(SyncTool):
     """Find files by glob pattern."""
 
+    META = {"category": "file", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "glob"
@@ -194,6 +202,8 @@ class GlobTool(SyncTool):
 
 class GrepTool(SyncTool):
     """Search for text in files."""
+
+    META = {"category": "file", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -253,6 +263,8 @@ class GrepTool(SyncTool):
 
 class ListDirTool(SyncTool):
     """List contents of a directory."""
+
+    META = {"category": "file", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

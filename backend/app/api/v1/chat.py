@@ -17,10 +17,11 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    model: str
+    model: Optional[str] = None
     messages: List[Message]
     stream: bool = False
     options: Optional[dict] = None
+    provider: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -32,22 +33,34 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 @limiter.limit(os.environ.get("CHAT_RATE_LIMIT", "30/minute"))
 async def chat(request: Request, chat_request: ChatRequest):
-    llm_service = LLMService(
-        base_url=settings.OLLAMA_CLOUD_HOST,
-        api_key=settings.OLLAMA_API_KEY
-    )
+    from app.services.llm.provider_factory import provider_factory
+
+    provider_name = chat_request.provider or settings.LLM_PROVIDER
+    provider = provider_factory.get_provider(provider_name)
+
     try:
+        model = chat_request.model
+        if not model:
+            models = await provider.list_models()
+            if models:
+                first = models[0]
+                model = first.get("id") or first.get("name") or first.get("model", "")
+        
+        if not model:
+            raise HTTPException(status_code=400, detail="No model available")
+
         messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
-        result = await llm_service.chat(
-            model=chat_request.model,
-            messages=messages
+        result = await provider.chat(
+            model=model,
+            messages=messages,
+            options=chat_request.options
         )
-        await llm_service.close()
         return ChatResponse(
-            model=result.get("model", request.model),
+            model=result.get("model", model),
             message=result.get("message", {}),
             done=result.get("done", True)
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        await llm_service.close()
-        raise HTTPException(status_code=500, detail="Chat service unavailable")
+        raise HTTPException(status_code=500, detail=f"Chat service unavailable: {str(e)}")

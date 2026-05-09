@@ -14,6 +14,8 @@ from app.core.config import settings
 class PostgresQueryTool(SyncTool):
     """Execute a PostgreSQL query."""
 
+    META = {"category": "database", "max_calls_per_run": 5, "parallel_safe": False}
+
     @property
     def name(self) -> str:
         return "postgres_query"
@@ -60,6 +62,8 @@ class PostgresQueryTool(SyncTool):
 class PostgresListTablesTool(SyncTool):
     """List all tables in the database."""
 
+    META = {"category": "database", "max_calls_per_run": 0, "parallel_safe": True}
+
     @property
     def name(self) -> str:
         return "postgres_list_tables"
@@ -92,6 +96,8 @@ class PostgresListTablesTool(SyncTool):
 
 class PostgresDescribeTableTool(SyncTool):
     """Describe a table structure."""
+
+    META = {"category": "database", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

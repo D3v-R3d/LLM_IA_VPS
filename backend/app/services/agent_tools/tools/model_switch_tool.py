@@ -3,25 +3,16 @@ Tool for listing and switching LLM models.
 Uses user preferences to store the selected model.
 """
 
-import httpx
 from typing import Any, Dict
 from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.llm.provider_factory import provider_factory
 from app.core.config import settings
-
-
-AVAILABLE_MODELS = [
-    {"id": "qwen3.5:397b-cloud", "name": "Qwen 3.5 (Fast)", "description": "Fast, good for simple tasks"},
-    {"id": "qwen3.5:32b", "name": "Qwen 3.5 32B", "description": "Balanced speed and quality"},
-    {"id": "qwen3.5:72b", "name": "Qwen 3.5 72B", "description": "Higher quality, slower"},
-    {"id": "llama3.1:8b", "name": "Llama 3.1 8B", "description": "Open source, fast"},
-    {"id": "llama3.1:70b", "name": "Llama 3.1 70B", "description": "High quality open source"},
-    {"id": "gemma4:31b", "name": "Gemma 4 31B", "description": "Google's latest, high quality"},
-    {"id": "mistral:7b", "name": "Mistral 7B", "description": "Fast, good reasoning"},
-]
 
 
 class ModelSwitchTool(BaseTool):
     """Tool for listing available models and switching the active model."""
+
+    META = {"category": "util", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -89,21 +80,22 @@ class ModelSwitchTool(BaseTool):
         except Exception as e:
             return ToolResult(success=False, error=str(e))
 
+    def _get_provider_name(self) -> str:
+        """Get the current provider name."""
+        return settings.LLM_PROVIDER
+
     async def _fetch_available_models(self) -> list:
-        """Fetch available models from Ollama Cloud API."""
+        """Fetch available models from the current LLM provider."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{settings.OLLAMA_CLOUD_HOST}/api/tags",
-                    headers={"Authorization": f"Bearer {settings.OLLAMA_API_KEY}"}
-                )
-                if response.status_code == 200:
-                    result = response.json()
-                    return [
-                        {"id": m.get("name"), "name": m.get("name"), "description": "Available on Ollama Cloud"}
-                        for m in result.get("models", [])
-                    ]
+            provider = provider_factory.get_provider(settings.LLM_PROVIDER)
+            models = await provider.list_models()
+            return [
+                {"id": m.get("id") or m.get("name") or m.get("model", ""), 
+                 "name": m.get("name") or m.get("id") or m.get("model", ""),
+                 "description": f"Available on {provider.name}"}
+                for m in models
+            ]
         except Exception:
             pass
         
-        return AVAILABLE_MODELS
+        return []

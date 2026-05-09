@@ -116,18 +116,33 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def get_all_definitions(self) -> List[Dict]:
-        """Get JSON schema definitions for all tools (for LLM function calling)."""
-        definitions = []
-        for tool in self._tools.values():
-            definitions.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters
-                }
-            })
-        return definitions
+        """Get JSON schema definitions for ALL tools (for LLM function calling).
+        Returns only the LLM-facing part without internal metadata."""
+        return [self._llm_definition(tool) for tool in self._tools.values()]
+
+    def get_definitions_by_names(self, names: List[str]) -> List[Dict]:
+        """Get definitions for specific tools by name (with metadata)."""
+        return [
+            tool.to_definition()
+            for name in names
+            for tool in [self._tools.get(name)]
+            if tool is not None
+        ]
+
+    def get_tools_by_category(self, category: str) -> List[BaseTool]:
+        """Get all tools in a category."""
+        return [t for t in self._tools.values() if t.category == category]
+
+    def _llm_definition(self, tool: BaseTool) -> Dict:
+        """LLM-facing definition without internal metadata."""
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            },
+        }
 
     def list_names(self) -> List[str]:
         """List all tool names."""

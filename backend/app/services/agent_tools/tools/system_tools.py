@@ -15,6 +15,8 @@ from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult, SyncT
 class DockerTool(SyncTool):
     """Execute docker commands using Docker socket API."""
 
+    META = {"category": "system", "max_calls_per_run": 0, "parallel_safe": False}
+
     @property
     def name(self) -> str:
         return "docker"
@@ -130,6 +132,8 @@ class DockerTool(SyncTool):
 class BashTool(SyncTool):
     """Execute a bash command."""
 
+    META = {"category": "system", "max_calls_per_run": 1, "parallel_safe": False}
+
     @property
     def name(self) -> str:
         return "bash"
@@ -177,6 +181,8 @@ class BashTool(SyncTool):
 
 class GitTool(SyncTool):
     """Execute git commands."""
+
+    META = {"category": "system", "max_calls_per_run": 0, "parallel_safe": False}
 
     @property
     def name(self) -> str:
@@ -227,6 +233,8 @@ class GitTool(SyncTool):
 
 class PkillTool(SyncTool):
     """Kill processes by name."""
+
+    META = {"category": "system", "max_calls_per_run": 0, "parallel_safe": False}
 
     @property
     def name(self) -> str:
