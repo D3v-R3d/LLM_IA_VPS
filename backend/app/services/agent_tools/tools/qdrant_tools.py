@@ -39,72 +39,13 @@ class QdrantSearchTool(BaseTool):
         from app.services.llm.embedding import EmbeddingService
 
         query = kwargs.get("query", "")
-        collection = kwargs.get("collection", "documents")
+        collection = kwargs.get("collection", "document")
         limit = kwargs.get("limit", 5)
 
         try:
-            service = VectorStorageService()
-            if not service.collection_exists(collection):
-                return ToolResult(success=False, error=f"Collection not found: {collection}")
+        service = VectorStorageService()
 
-            embed_service = EmbeddingService()
-            embedding = await embed_service.embed_single(query)
-            if not embedding:
-                return ToolResult(success=False, error="Failed to generate embedding for query")
-
-            results = service.search(
-                collection_name=collection,
-                query_vector=embedding,
-                limit=limit
-            )
-
-            if not results:
-                return ToolResult(success=True, data={"results": [], "message": "No results found"})
-
-            formatted = []
-            for r in results:
-                payload = r.get("payload", {})
-                formatted.append({
-                    "score": r.get("score", 0),
-                    "content": payload.get("content", ""),
-                    "document_id": payload.get("document_id"),
-                    "metadata": payload.get("metadata", {})
-                })
-
-            return ToolResult(success=True, data={"results": formatted})
-
-        except Exception as e:
-            return ToolResult(success=False, error=str(e))
-
-
-class QdrantScrollTool(BaseTool):
-    """Scroll through all stored content in a Qdrant collection."""
-
-    META = {"category": "search", "max_calls_per_run": 0, "parallel_safe": True}
-
-    @property
-    def name(self) -> str:
-        return "qdrant_scroll"
-
-    @property
-    def description(self) -> str:
-        return "Scroll through all stored content in a Qdrant collection to list documents or messages."
-
-    @property
-    def parameters(self) -> dict:
-        return {
-            "type": "object",
-            "properties": {
-                "collection": {"type": "string", "description": "Qdrant collection name"},
-                "limit": {"type": "integer", "description": "Max items to return (default 20)"}
-            },
-            "required": ["collection"]
-        }
-
-    async def execute(self, **kwargs) -> ToolResult:
-        from app.services.document.vector_storage import VectorStorageService
-
-        collection = kwargs.get("collection", "documents")
+        collection = kwargs.get("collection", "document")
         limit = kwargs.get("limit", 20)
 
         try:
