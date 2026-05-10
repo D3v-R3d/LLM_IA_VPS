@@ -24,6 +24,8 @@ services:
       - SYNOLOGY_PASSWORD_FILE=/run/secrets/synology_password
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
       - PROMPT_DIR=/home/projects/tower_project
+      - USE_AGENT_ORCHESTRATOR=true
+      - OPENROUTER_API_KEY=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
     secrets:
       - ollama_api_key
       - groq_api_key

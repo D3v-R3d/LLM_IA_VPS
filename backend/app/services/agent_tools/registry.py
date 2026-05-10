@@ -45,6 +45,7 @@ class ToolRegistry:
             WebFetchTool, WebSearchTool, APIFetchTool
         )
         from app.services.agent_tools.tools.database import (
+            PostgresQueryReadTool, PostgresQueryWriteTool,
             PostgresQueryTool, PostgresListTablesTool, PostgresDescribeTableTool
         )
         from app.services.agent_tools.tools.communication import (
@@ -80,7 +81,9 @@ class ToolRegistry:
             WebFetchTool(),
             WebSearchTool(),
             APIFetchTool(),
-            PostgresQueryTool(),
+            PostgresQueryReadTool(),
+            PostgresQueryWriteTool(),
+            PostgresQueryTool(),  # Deprecated
             PostgresListTablesTool(),
             PostgresDescribeTableTool(),
             TelegramSendMessageTool(),

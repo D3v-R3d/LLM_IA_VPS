@@ -14,17 +14,24 @@ The loop should NOT manage:
 - Retries
 - Notifications
 - Memory compression
+
+FEATURE FLAG:
+- USE_AGENT_ORCHESTRATOR=true → uses AgentOrchestrator
+- USE_AGENT_ORCHESTRATOR=false → uses original runner (default)
 """
 
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import uuid
 from typing import List, Dict, Any, Optional, Tuple
 
 from app.services.agent_core.side_systems import BudgetManager
+from app.services.agent_core.config import AgentConfig
+from app.services.agent_core.orchestrator import AgentOrchestrator
 from app.services.llm_logger import LlmLogger
 
 logger = logging.getLogger(__name__)
@@ -74,6 +81,21 @@ class AgentRunner:
         self._llm_timeout = llm_timeout
         self._budgets = BudgetManager(budgets or {})
         self._provider_factory = provider_factory
+
+        # Feature flag: use AgentOrchestrator or original runner
+        self._config = AgentConfig.from_env()
+        self._config.validate()
+
+        # Thin wrapper: instantiate both, route in run()
+        # Original runner logic kept as _run_original()
+        self._orchestrator = AgentOrchestrator(
+            config=self._config
+        ) if self._config.use_agent_orchestrator else None
+
+        if self._config.use_agent_orchestrator:
+            logger.info("AgentOrchestrator enabled via USE_AGENT_ORCHESTRATOR=true")
+        else:
+            logger.info("Using original AgentRunner (USE_AGENT_ORCHESTRATOR=false)")
 
     def _get_llm(self, provider_name: Optional[str] = None):
         """Get the right LLM provider: per-user if specified, else default."""
@@ -173,6 +195,17 @@ class AgentRunner:
         Returns:
             Final response text
         """
+        # THIN WRAPPER ROUTING
+        if self._orchestrator is not None:
+            return await self._orchestrator.run(
+                user_message=user_message,
+                messages_history=messages_history,
+                system_prompt=system_prompt,
+                chat_id=chat_id,
+                user_id=user_id,
+                model=model,
+                provider_name=provider_name,
+            )
         start_time = time.time()
         llm_logger = None
         log_id = None

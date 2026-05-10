@@ -4,7 +4,7 @@ Agent Tools
 File tools: read, write, edit, glob, grep, ls
 System tools: bash, docker, git, pkill
 Web tools: web_fetch, web_search, api_fetch
-Database tools: postgres_query, postgres_list_tables, postgres_describe_table
+Database tools: postgres_query_read, postgres_query_write, postgres_list_tables, postgres_describe_table
 Communication tools: telegram_send_message, telegram_send_notification, etc.
 Memory tools: qdrant_search
 Model tools: model_switch
@@ -28,6 +28,7 @@ from app.services.agent_tools.tools.web import (
     WebFetchTool, WebSearchTool, APIFetchTool
 )
 from app.services.agent_tools.tools.database import (
+    PostgresQueryReadTool, PostgresQueryWriteTool,
     PostgresQueryTool, PostgresListTablesTool, PostgresDescribeTableTool
 )
 from app.services.agent_tools.tools.communication import (
@@ -61,6 +62,7 @@ __all__ = [
     "ReadTool", "WriteTool", "EditTool", "GlobTool", "GrepTool", "ListDirTool",
     "BashTool", "DockerTool", "GitTool", "PkillTool",
     "WebFetchTool", "WebSearchTool", "APIFetchTool",
+    "PostgresQueryReadTool", "PostgresQueryWriteTool",
     "PostgresQueryTool", "PostgresListTablesTool", "PostgresDescribeTableTool",
     "TelegramSendMessageTool", "TelegramSendNotificationTool",
     "TelegramGetUserInfoTool", "TelegramBotHealthTool",
