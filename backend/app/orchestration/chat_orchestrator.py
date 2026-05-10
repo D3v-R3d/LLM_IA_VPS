@@ -10,7 +10,6 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Optional
-from uuid import UUID
 
 logger = logging.getLogger(__name__)
 

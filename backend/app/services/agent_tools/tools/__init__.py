@@ -48,9 +48,9 @@ from app.services.agent_tools.tools.utils import (
     UserNotesTool
 )
 
-from app.services.agent_tools.tools.web_search import WebSearchService
-from app.services.agent_tools.tools.url_fetch import URLFetchService
-from app.services.agent_tools.tools.api_caller import APICallerService
+from app.services.agent_tools.tools.web.web_search import WebSearchService
+from app.services.agent_tools.tools.web.web_fetch import URLFetchService
+from app.services.agent_tools.tools.web.api_call import APICallerService
 
 try:
     from app.services.agent_tools.tools.model import ModelSwitchTool

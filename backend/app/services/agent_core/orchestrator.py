@@ -13,6 +13,7 @@ Implements all 7 fixes:
 
 import asyncio
 import json
+import time
 import logging
 import os
 import re
@@ -85,9 +86,19 @@ class AgentOrchestrator:
 
         from app.services.agent_tools.registry import get_registry
         from app.services.agent_core.tool_executor import ToolExecutor
+        from app.services.agent_core.side_systems import BudgetManager
 
         self.registry = get_registry()
         self.tool_executor = ToolExecutor(registry=self.registry)
+
+        budgets_config = os.getenv("AGENT_TOOL_BUDGETS", "")
+        budgets = {}
+        if budgets_config:
+            for part in budgets_config.split(","):
+                if ":" in part:
+                    tool, count = part.split(":")
+                    budgets[tool.strip()] = int(count.strip())
+        self.budget_manager = BudgetManager(budgets) if budgets else None
 
     def _setup_logging(self):
         """Setup logging based on debug flag."""
@@ -133,7 +144,8 @@ class AgentOrchestrator:
             context=context,
             model=model,
             provider_name=provider_name,
-            state=state
+            state=state,
+            db_session=db_session
         )
 
         final_response = await self.synthesize(
@@ -316,7 +328,8 @@ Do not include any other text. The response must be valid JSON."""
         context: List[Dict],
         model: Optional[str],
         provider_name: Optional[str],
-        state: RunState
+        state: RunState,
+        db_session: Any = None
     ) -> Dict:
         """Main execution loop with all improvements."""
         max_steps = min(self.config.max_steps, self.config.hard_limit)
@@ -327,7 +340,7 @@ Do not include any other text. The response must be valid JSON."""
             state.step_retries = 0
             logger.debug(f"Execution step: {step}/{max_steps}")
 
-            response = await self._call_llm(context, model, provider_name)
+            response = await self._call_llm(context, model, provider_name, db_session)
 
             tool_calls = self._parse_tool_calls(response)
 
@@ -350,6 +363,14 @@ Do not include any other text. The response must be valid JSON."""
             if not tool_calls:
                 content = response.get("message", {}).get("content", "")
                 return {"direct_response": content, "tool_results": []}
+
+            if self.budget_manager:
+                tool_calls = self.budget_manager.check(tool_calls)
+                if not tool_calls:
+                    return {
+                        "direct_response": "Tool budget exhausted for this request.",
+                        "tool_results": []
+                    }
 
             tool_results = await self._execute_with_idempotency(tool_calls, state)
             all_tool_results.extend(tool_results)
@@ -645,7 +666,7 @@ Do not include any other text. The response must be valid JSON."""
     # LLM CALL
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str]) -> Dict:
+    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None) -> Dict:
         """Call LLM using existing provider layer."""
         from app.services.llm.provider_factory import provider_factory
         from app.services.agent_tools.registry import get_registry
@@ -658,14 +679,61 @@ Do not include any other text. The response must be valid JSON."""
         if not model:
             model = settings.LLM_MODEL or "default"
 
+        start_time = time.time()
+        request_id = None
+
+        if db_session:
+            try:
+                from app.services.llm_logger import LlmLogger
+                llm_logger = LlmLogger(db_session)
+                request_id = llm_logger.log_request(
+                    provider=provider_name or settings.LLM_PROVIDER,
+                    model=model,
+                    messages=context,
+                    tool_count=len(tools)
+                )
+            except Exception:
+                pass
+
         try:
             response = await provider.chat_with_tools(
                 model=model,
                 messages=context,
                 tools=tools
             )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            if db_session and request_id:
+                try:
+                    from app.services.llm_logger import LlmLogger
+                    llm_logger = LlmLogger(db_session)
+                    llm_logger.log_response(
+                        request_id=request_id,
+                        response=response,
+                        duration_ms=duration_ms,
+                        success=True,
+                        iterations=1
+                    )
+                except Exception:
+                    pass
+
             return response
         except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            if db_session and request_id:
+                try:
+                    from app.services.llm_logger import LlmLogger
+                    llm_logger = LlmLogger(db_session)
+                    llm_logger.log_response(
+                        request_id=request_id,
+                        response={"error": str(e)},
+                        duration_ms=duration_ms,
+                        success=False,
+                        iterations=1
+                    )
+                except Exception:
+                    pass
+
             logger.error(f"LLM call failed: {e}")
             return {"message": {"content": f"Error: {str(e)}", "tool_calls": []}}
 

@@ -357,38 +357,3 @@ class PostgresDescribeTableTool(SyncTool):
 
         except Exception as e:
             return ToolResult(success=False, error=str(e))
-
-
-# Backwards compatibility - keep old tool but mark as deprecated
-class PostgresQueryTool(SyncTool):
-    """
-    DEPRECATED: Use postgres_query_read or postgres_query_write instead.
-    This tool exists for backwards compatibility only.
-    """
-
-    META = {"category": "database", "max_calls_per_run": 0, "parallel_safe": False}
-
-    @property
-    def name(self) -> str:
-        return "postgres_query"
-
-    @property
-    def description(self) -> str:
-        return "[DEPRECATED] Use postgres_query_read or postgres_query_write instead."
-
-    @property
-    def parameters(self) -> dict:
-        return {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "[DEPRECATED] SQL query"},
-                "mode": {"type": "string", "description": "read or write (required)"}
-            },
-            "required": ["query", "mode"]
-        }
-
-    def _execute_sync(self, **kwargs) -> ToolResult:
-        return ToolResult(
-            success=False,
-            error="postgres_query is deprecated. Use postgres_query_read (SELECT/WITH) or postgres_query_write (INSERT/UPDATE/DELETE) instead."
-        )

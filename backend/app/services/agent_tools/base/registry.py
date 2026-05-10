@@ -8,13 +8,11 @@ Thread-safe singleton.
 
 import importlib
 import logging
-import os
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional
 
 from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
-from app.services.agent_tools.base.schemas import validate_canonical_tool
 
 logger = logging.getLogger(__name__)
 
@@ -91,48 +89,7 @@ class ToolRegistry:
                         except Exception as e:
                             logger.error(f"Failed to instantiate {attr_name} from {module_path}: {e}")
         
-        # Also import tools from the old monolithic files (for backward compatibility)
-        self._register_legacy_tools()
-    
-    def _register_legacy_tools(self):
-        """Register tools from old monolithic files (temporary)."""
-        legacy_modules = [
-            "app.services.agent_tools.tools.file_tools",
-            "app.services.agent_tools.tools.system_tools",
-            "app.services.agent_tools.tools.web_tools",
-            "app.services.agent_tools.tools.database_tools",
-            "app.services.agent_tools.tools.telegram_tools",
-            "app.services.agent_tools.tools.nas_tools",
-            "app.services.agent_tools.tools.scraper_tools",
-            "app.services.agent_tools.tools.model_switch_tool",
-            "app.services.agent_tools.tools.qdrant_tools",
-            "app.services.agent_tools.tools.user_notes_tool",
-            "app.services.agent_tools.tools.web_search",
-            "app.services.agent_tools.tools.url_fetch",
-            "app.services.agent_tools.tools.api_caller",
-        ]
         
-        for module_path in legacy_modules:
-            try:
-                module = importlib.import_module(module_path)
-            except Exception as e:
-                logger.warning(f"Could not import legacy module {module_path}: {e}")
-                continue
-            
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if (isinstance(attr, type) and 
-                    issubclass(attr, BaseTool) and 
-                    attr is not BaseTool):
-                    
-                    try:
-                        tool_instance = attr()
-                        # Check if already registered (avoid duplicates)
-                        if tool_instance.name not in self._tools:
-                            self.register(tool_instance)
-                            logger.info(f"Registered legacy tool: {tool_instance.name}")
-                    except Exception as e:
-                        logger.error(f"Failed to instantiate legacy tool {attr_name}: {e}")
     
     def register(self, tool: BaseTool) -> None:
         """Register a tool."""
@@ -208,10 +165,7 @@ def get_registry() -> ToolRegistry:
 
 def get_tool_definitions() -> List[Dict]:
     """Get all tool definitions for LLM function calling (OpenAI format)."""
-    return get_registry().get_all_definitions()
+    return get_registry().get_all_canonical()
 
 
-# For backward compatibility with old imports
-def get_all_tools() -> List[BaseTool]:
-    """Get all tools (legacy)."""
-    return get_registry().get_all()
+
