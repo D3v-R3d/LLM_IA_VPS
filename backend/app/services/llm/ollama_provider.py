@@ -1,18 +1,25 @@
 """
-Ollama Cloud Provider
+Ollama Provider
 
-LLM provider implementation for Ollama Cloud API.
+LLM provider implementation for Ollama API.
+Uses OpenAI-compatible format for tool calling.
+Tool formatting delegated to OllamaAdapter (which reuses OpenAIAdapter).
 """
 
 from typing import List, Dict, Any, Optional
 import httpx
+import logging
+
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
+from app.services.agent_tools.providers.adapters.ollama_adapter import OllamaAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(LLMProvider):
     """
-    Ollama Cloud API provider.
+    Ollama API provider.
 
     API Reference: https://ollama.com/api
     """
@@ -25,16 +32,17 @@ class OllamaProvider(LLMProvider):
         self.base_url = (base_url or settings.OLLAMA_HOST).rstrip("/")
         self.api_key = api_key or settings.OLLAMA_API_KEY
         self._client = httpx.AsyncClient(timeout=180.0)
+        self._adapter = OllamaAdapter()
+
+    @property
+    def name(self) -> str:
+        return "ollama"
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
-
-    @property
-    def name(self) -> str:
-        return "ollama"
 
     async def chat(
         self,
@@ -65,24 +73,22 @@ class OllamaProvider(LLMProvider):
         tools: List[Dict[str, Any]],
         options: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        import logging
-        logger = logging.getLogger(__name__)
+        # Tools from registry are already in OpenAI format
+        provider_tools = tools
         payload = {
             "model": model,
             "messages": messages,
-            "tools": tools,
+            "tools": provider_tools,
             "stream": False
         }
         if options:
             payload["options"] = options
 
-        logger.info(f"Ollama chat_with_tools: url={self.base_url}/api/chat, model={model}, tools={len(tools)}")
         response = await self._client.post(
             f"{self.base_url}/api/chat",
             json=payload,
             headers=self._get_headers()
         )
-        logger.info(f"Ollama response: status={response.status_code}")
         response.raise_for_status()
         result = response.json()
 

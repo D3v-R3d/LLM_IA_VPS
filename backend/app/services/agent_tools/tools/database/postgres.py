@@ -1,13 +1,12 @@
 """
-Database Tools - PostgreSQL queries
-
-Tools for database operations.
+PostgreSQL database tools.
 """
 
 import psycopg2
 from typing import Optional, Dict, Any
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult, SyncTool
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.sync_tool import SyncTool
 from app.core.config import settings
 
 
@@ -39,11 +38,14 @@ class PostgresQueryTool(SyncTool):
         query = kwargs.get("query")
         params = kwargs.get("params")
 
+        if not query:
+            return ToolResult(success=False, error="Missing query")
+
         try:
             conn = psycopg2.connect(settings.DATABASE_URL)
             cur = conn.cursor()
             cur.execute(query, params)
-            
+
             if query.strip().upper().startswith(("SELECT", "WITH")):
                 columns = [desc[0] for desc in cur.description]
                 rows = [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -81,8 +83,8 @@ class PostgresListTablesTool(SyncTool):
             conn = psycopg2.connect(settings.DATABASE_URL)
             cur = conn.cursor()
             cur.execute("""
-                SELECT table_schema, table_name 
-                FROM information_schema.tables 
+                SELECT table_schema, table_name
+                FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
                 ORDER BY table_schema, table_name
             """)
@@ -119,7 +121,10 @@ class PostgresDescribeTableTool(SyncTool):
 
     def _execute_sync(self, **kwargs) -> ToolResult:
         table = kwargs.get("table")
-        
+
+        if not table:
+            return ToolResult(success=False, error="Missing table name")
+
         try:
             conn = psycopg2.connect(settings.DATABASE_URL)
             cur = conn.cursor()

@@ -1,18 +1,16 @@
 """
-Qdrant Tools - Search and retrieve stored embeddings.
-
-Tools for searching the vector database for semantic content.
+Vector search tool (Qdrant).
 """
 
 from typing import Optional, Dict, Any
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 
 
 class QdrantSearchTool(BaseTool):
     """Search Qdrant vector store for similar content."""
 
-    META = {"category": "search", "max_calls_per_run": 0, "parallel_safe": True}
+    META = {"category": "memory", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -36,17 +34,15 @@ class QdrantSearchTool(BaseTool):
 
     async def execute(self, **kwargs) -> ToolResult:
         from app.services.document.vector_storage import VectorStorageService
-        from app.services.llm.embedding import EmbeddingService
 
         query = kwargs.get("query", "")
         collection = kwargs.get("collection", "document")
         limit = kwargs.get("limit", 5)
 
-        try:
-        service = VectorStorageService()
-
-        collection = kwargs.get("collection", "document")
-        limit = kwargs.get("limit", 20)
+        if not query:
+            return ToolResult(success=False, error="Missing query")
+        if not collection:
+            return ToolResult(success=False, error="Missing collection")
 
         try:
             service = VectorStorageService()

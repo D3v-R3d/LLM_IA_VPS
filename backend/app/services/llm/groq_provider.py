@@ -3,13 +3,20 @@ Groq Provider
 
 LLM provider implementation for Groq API.
 API Reference: https://console.groq.com/docs/api-reference
+Uses OpenAI-compatible endpoint.
+Tool formatting delegated to GroqAdapter.
 """
 
 import json
+import logging
 from typing import List, Dict, Any, Optional
 import httpx
+
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
+from app.services.agent_tools.providers.adapters.groq_adapter import GroqAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class GroqProvider(LLMProvider):
@@ -29,6 +36,7 @@ class GroqProvider(LLMProvider):
         self.api_key = api_key or settings.GROQ_API_KEY
         self.base_url = base_url or self.BASE_URL
         self._client = httpx.AsyncClient(timeout=180.0)
+        self._adapter = GroqAdapter()
 
     @property
     def name(self) -> str:
@@ -87,6 +95,7 @@ class GroqProvider(LLMProvider):
         tools: List[Dict[str, Any]],
         options: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
+        # Tools from registry are already in OpenAI format
         payload = {
             "model": model,
             "messages": messages,
@@ -103,13 +112,10 @@ class GroqProvider(LLMProvider):
             headers=self._get_headers()
         )
         if response.status_code == 429:
-            import logging
             logging.getLogger(__name__).error(f"Groq 429 body: {response.text[:500]}")
         elif response.status_code == 400:
-            import logging
             logging.getLogger(__name__).error(f"Groq 400 body: {response.text[:500]}")
         elif response.status_code == 413:
-            import logging
             logging.getLogger(__name__).error(f"Groq 413 body: {response.text[:500]}")
             payload_size = len(json.dumps(payload))
             logging.getLogger(__name__).error(f"Groq 413 payload size: {payload_size} bytes, messages: {len(messages)}, tools: {len(tools)}")

@@ -1,13 +1,11 @@
 """
-Scrape And Store Tool
-
-Scrapes URLs, cleans content, chunks and stores embeddings.
+Scraper tools.
 """
 
 from typing import Optional
 import asyncio
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 
 
 class ScrapeAndStoreTool(BaseTool):
@@ -66,19 +64,6 @@ Input: JSON array of URLs and optional parameters (collection_name, user_id)"""
         }
 
     async def execute(self, **kwargs) -> ToolResult:
-        """
-        Execute the scrape and store pipeline.
-
-        Args:
-            urls: List of URLs to scrape
-            collection_name: VectorDB collection name
-            user_id: User ID for tracking
-            max_length: Max characters per URL
-            dry_run: Whether to skip embedding storage
-
-        Returns:
-            ToolResult with pipeline results
-        """
         from app.services.document import DataPipelineService
 
         urls = kwargs.get("urls", [])
@@ -168,18 +153,6 @@ Input: search query and optional parameters (collection_name, limit, score_thres
         }
 
     async def execute(self, **kwargs) -> ToolResult:
-        """
-        Execute semantic search on stored content.
-
-        Args:
-            query: Search query text
-            collection_name: VectorDB collection
-            limit: Max results
-            score_threshold: Minimum relevance score
-
-        Returns:
-            ToolResult with search results
-        """
         from app.services.document import DataPipelineService
 
         query = kwargs.get("query", "")

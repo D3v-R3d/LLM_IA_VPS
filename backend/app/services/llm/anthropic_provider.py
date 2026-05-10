@@ -3,6 +3,7 @@ Anthropic Claude Provider
 
 LLM provider implementation for Anthropic Claude API.
 Uses the official Anthropic SDK.
+Tool formatting delegated to AnthropicAdapter.
 """
 
 import json
@@ -12,6 +13,7 @@ from typing import List, Dict, Any, Optional
 import anthropic
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
+from app.services.agent_tools.providers.adapters.anthropic_adapter import AnthropicAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 class AnthropicProvider(LLMProvider):
     """
     Anthropic Claude API provider.
-    
+
     Models: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022, etc.
     """
 
@@ -29,6 +31,7 @@ class AnthropicProvider(LLMProvider):
             api_key=self.api_key,
             timeout=180.0
         )
+        self._adapter = AnthropicAdapter()
 
     @property
     def name(self) -> str:
@@ -36,16 +39,16 @@ class AnthropicProvider(LLMProvider):
 
     def _convert_messages(self, messages: List[Dict[str, str]]) -> tuple:
         """Convert OpenAI-style messages to Anthropic format.
-        
+
         Returns: (system, clean_messages)
         """
         system = None
         clean_messages = []
-        
+
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
-            
+
             if role == "system":
                 system = str(content) if content else None
             elif role == "assistant":
@@ -93,20 +96,8 @@ class AnthropicProvider(LLMProvider):
                 })
             else:
                 clean_messages.append({"role": role, "content": str(content) if content else ""})
-        
-        return system, clean_messages
 
-    def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict]:
-        """Convert OpenAI-style tools to Anthropic format."""
-        anthropic_tools = []
-        for tool in tools:
-            func = tool.get("function", {})
-            anthropic_tools.append({
-                "name": func.get("name"),
-                "description": func.get("description"),
-                "input_schema": func.get("parameters", {"type": "object", "properties": {}})
-            })
-        return anthropic_tools
+        return system, clean_messages
 
     async def chat(
         self,
@@ -117,7 +108,7 @@ class AnthropicProvider(LLMProvider):
         """Generate chat completion."""
         try:
             system, clean_messages = self._convert_messages(messages)
-            
+
             response = await self._client.messages.create(
                 model=model,
                 system=system,
@@ -125,13 +116,13 @@ class AnthropicProvider(LLMProvider):
                 max_tokens=options.get("max_tokens", 1024) if options else 1024,
                 temperature=options.get("temperature", 0.7) if options else 0.7,
             )
-            
+
             text_content = ""
             for block in response.content:
                 if block.type == "text":
                     text_content = block.text
                     break
-            
+
             return {
                 "model": response.model,
                 "message": {
@@ -154,8 +145,15 @@ class AnthropicProvider(LLMProvider):
         """Generate chat completion with tool calling."""
         try:
             system, clean_messages = self._convert_messages(messages)
-            tool_schema = self._convert_tools(tools)
-            
+            # Convert from OpenAI format to canonical format for Anthropic adapter
+            canonical_tools = []
+            for tool in tools:
+                if "function" in tool:
+                    canonical_tools.append(tool["function"])
+                else:
+                    canonical_tools.append(tool)
+            tool_schema = self._adapter.to_provider_format(canonical_tools)
+
             response = await self._client.messages.create(
                 model=model,
                 system=system,
@@ -164,10 +162,10 @@ class AnthropicProvider(LLMProvider):
                 max_tokens=options.get("max_tokens", 1024) if options else 1024,
                 temperature=options.get("temperature", 0.7) if options else 0.7,
             )
-            
+
             tool_calls = []
             text_content = ""
-            
+
             for block in response.content:
                 if block.type == "tool_use":
                     args = block.input if isinstance(block.input, dict) else {}
@@ -176,12 +174,12 @@ class AnthropicProvider(LLMProvider):
                         "type": "function",
                         "function": {
                             "name": block.name,
-                            "arguments": json.dumps(args) if args else "{}"
+                            "arguments": args
                         }
                     })
                 elif block.type == "text":
                     text_content = block.text
-            
+
             return {
                 "model": response.model,
                 "message": {

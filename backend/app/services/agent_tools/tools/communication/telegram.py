@@ -1,12 +1,10 @@
 """
-Telegram Tools - SendMessage, SendNotification, GetUserInfo, BotHealth
-
-Tools for Telegram bot operations.
+Telegram tools.
 """
 
 from typing import Optional
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 from app.services.telegram_service import get_cached_telegram_service
 
 
@@ -16,7 +14,7 @@ telegram_service = get_cached_telegram_service()
 class TelegramSendMessageTool(BaseTool):
     """Send a message via Telegram."""
 
-    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+    META = {"category": "communication", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -40,7 +38,12 @@ class TelegramSendMessageTool(BaseTool):
     async def execute(self, **kwargs) -> ToolResult:
         chat_id = kwargs.get("chat_id")
         text = kwargs.get("text")
-        
+
+        if not chat_id:
+            return ToolResult(success=False, error="Missing chat_id")
+        if not text:
+            return ToolResult(success=False, error="Missing text")
+
         try:
             success = await telegram_service.send_message(chat_id, text)
             return ToolResult(success=success, data={"chat_id": chat_id, "sent": success})
@@ -51,7 +54,7 @@ class TelegramSendMessageTool(BaseTool):
 class TelegramSendNotificationTool(BaseTool):
     """Send a notification via Telegram."""
 
-    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+    META = {"category": "communication", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -79,7 +82,14 @@ class TelegramSendNotificationTool(BaseTool):
         title = kwargs.get("title")
         message = kwargs.get("message")
         notification_type = kwargs.get("notification_type", "info")
-        
+
+        if not chat_id:
+            return ToolResult(success=False, error="Missing chat_id")
+        if not title:
+            return ToolResult(success=False, error="Missing title")
+        if not message:
+            return ToolResult(success=False, error="Missing message")
+
         try:
             success = await telegram_service.send_notification(chat_id, title, message, notification_type)
             return ToolResult(success=success, data={"chat_id": chat_id, "sent": success})
@@ -90,7 +100,7 @@ class TelegramSendNotificationTool(BaseTool):
 class TelegramGetUserInfoTool(BaseTool):
     """Get Telegram user info."""
 
-    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+    META = {"category": "communication", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:
@@ -112,7 +122,10 @@ class TelegramGetUserInfoTool(BaseTool):
 
     async def execute(self, **kwargs) -> ToolResult:
         chat_id = kwargs.get("chat_id")
-        
+
+        if not chat_id:
+            return ToolResult(success=False, error="Missing chat_id")
+
         try:
             info = await telegram_service.get_user_info(chat_id)
             return ToolResult(success=True, data=info)
@@ -123,7 +136,7 @@ class TelegramGetUserInfoTool(BaseTool):
 class TelegramBotHealthTool(BaseTool):
     """Check Telegram bot health."""
 
-    META = {"category": "telegram", "max_calls_per_run": 0, "parallel_safe": True}
+    META = {"category": "communication", "max_calls_per_run": 0, "parallel_safe": True}
 
     @property
     def name(self) -> str:

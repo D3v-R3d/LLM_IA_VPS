@@ -1,13 +1,11 @@
 """
-User Notes Tool - Write notes to the prompt inject folder
-
-Always writes to {PROMPT_DIR}/inject/notes.md
+User notes tool.
 """
 
 import os
 from datetime import datetime
 from app.core.config import settings
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 
 
 class UserNotesTool(BaseTool):
@@ -35,6 +33,9 @@ class UserNotesTool(BaseTool):
 
     async def execute(self, **kwargs) -> ToolResult:
         content = kwargs.get("content", "")
+
+        if not content:
+            return ToolResult(success=False, error="Missing content")
 
         file_path = os.path.join(settings.PROMPT_DIR, "inject", "notes.md")
 

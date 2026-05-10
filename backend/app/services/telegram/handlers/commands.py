@@ -436,7 +436,7 @@ async def handle_nas_login_command(update: TelegramUpdate, context: HandlerConte
 
 async def handle_model_command(update: TelegramUpdate, context: HandlerContext) -> Optional[str]:
     """Handle /model command - list or switch models via inline buttons."""
-    from app.services.agent_tools.tools.model_switch_tool import ModelSwitchTool
+    from app.services.agent_tools.tools.model import ModelSwitchTool
 
     tool = ModelSwitchTool()
 

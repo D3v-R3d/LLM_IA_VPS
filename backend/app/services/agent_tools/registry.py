@@ -7,7 +7,7 @@ Central registry for all available tools.
 import threading
 from typing import Dict, List, Optional
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 
 
 class ToolRegistry:
@@ -35,29 +35,36 @@ class ToolRegistry:
 
     def _register_default_tools(self):
         """Register all built-in tools."""
-        from app.services.agent_tools.tools.file_tools import (
+        from app.services.agent_tools.tools.file import (
             ReadTool, WriteTool, EditTool, GlobTool, GrepTool, ListDirTool
         )
-        from app.services.agent_tools.tools.system_tools import (
+        from app.services.agent_tools.tools.system import (
             BashTool, DockerTool, GitTool, PkillTool
         )
-        from app.services.agent_tools.tools.web_tools import (
+        from app.services.agent_tools.tools.web import (
             WebFetchTool, WebSearchTool, APIFetchTool
         )
-        from app.services.agent_tools.tools.database_tools import (
+        from app.services.agent_tools.tools.database import (
             PostgresQueryTool, PostgresListTablesTool, PostgresDescribeTableTool
         )
-        from app.services.agent_tools.tools.telegram_tools import (
+        from app.services.agent_tools.tools.communication import (
             TelegramSendMessageTool, TelegramSendNotificationTool,
             TelegramGetUserInfoTool, TelegramBotHealthTool
         )
-        from app.services.agent_tools.tools.user_notes_tool import UserNotesTool
-        from app.services.agent_tools.tools.scraper_tools import (
+        from app.services.agent_tools.tools.utils import UserNotesTool
+        from app.services.agent_tools.tools.scraper import (
             ScrapeAndStoreTool, SearchStoredContentTool
         )
-        from app.services.agent_tools.tools.model_switch_tool import ModelSwitchTool
-        from app.services.agent_tools.tools.qdrant_tools import QdrantSearchTool, QdrantScrollTool
-        from app.services.agent_tools.tools.nas_tools import NasListShareTool, NasListFolderTool, NasSearchTool
+        from app.services.agent_tools.tools.memory import QdrantSearchTool
+        from app.services.agent_tools.tools.nas import (
+            NasListShareTool, NasListFolderTool, NasSearchTool
+        )
+
+        try:
+            from app.services.agent_tools.tools.model import ModelSwitchTool
+            has_model_tool = True
+        except ImportError:
+            has_model_tool = False
 
         tools = [
             ReadTool(),
@@ -83,13 +90,14 @@ class ToolRegistry:
             UserNotesTool(),
             ScrapeAndStoreTool(),
             SearchStoredContentTool(),
-            ModelSwitchTool(),
             QdrantSearchTool(),
-            QdrantScrollTool(),
             NasListShareTool(),
             NasListFolderTool(),
             NasSearchTool(),
         ]
+
+        if has_model_tool:
+            tools.append(ModelSwitchTool())
 
         for tool in tools:
             self.register(tool)

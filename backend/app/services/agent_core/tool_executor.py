@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from app.services.agent_core.tool_response import ToolResponse, ToolMetadata
-from app.services.agent_tools.tools.base_tool import ToolResult
+from app.services.agent_tools.base.base_tool import ToolResult
 from app.services.agent_core.result_summarizer import ResultSummarizer
 
 logger = logging.getLogger(__name__)

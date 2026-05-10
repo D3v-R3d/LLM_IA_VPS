@@ -1,13 +1,16 @@
 """
-Base Tool Interface
+Base Tool Interface (Refactored)
 
 All tools inherit from BaseTool and implement the execute method.
+Stateless, provider-agnostic.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, Any, Optional
 from datetime import datetime
+
+from app.services.agent_tools.base.schemas import CANONICAL_TOOL_SCHEMA, validate_canonical_tool
 
 
 @dataclass
@@ -16,7 +19,7 @@ class ToolResult:
     success: bool
     data: Any = None
     error: Optional[str] = None
-    timestamp: datetime = None
+    timestamp: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
         if self.timestamp is None:
@@ -38,10 +41,10 @@ class BaseTool(ABC):
     Each tool must implement:
     - name: unique tool identifier
     - description: what the tool does
-    - parameters: dict describing expected parameters
+    - parameters: dict describing expected parameters (JSON Schema)
     - execute(): the actual tool logic
 
-    Tool metadata (override in subclass):
+    Tool metadata (override in subclass via META class attribute):
     - category: tool group for routing
     - max_calls_per_run: 0 = unlimited
     - parallel_safe: can run in parallel with other tools
@@ -54,7 +57,8 @@ class BaseTool(ABC):
     }
 
     def __init__(self):
-        self._last_result: Optional[ToolResult] = None
+        # No state kept here (stateless tools)
+        pass
 
     @property
     @abstractmethod
@@ -70,7 +74,7 @@ class BaseTool(ABC):
 
     @property
     def category(self) -> str:
-        """Tool group for routing (file, web, system, database, telegram, nas, search, util)."""
+        """Tool group for routing (file, web, system, memory, etc.)."""
         return self.META.get("category", "util")
 
     @property
@@ -86,7 +90,7 @@ class BaseTool(ABC):
     @property
     def parameters(self) -> Dict[str, Any]:
         """
-        JSON schema for tool parameters.
+        JSON Schema for tool parameters.
         Override in subclass for custom parameters.
         """
         return {
@@ -95,8 +99,30 @@ class BaseTool(ABC):
             "required": []
         }
 
+    def to_canonical(self) -> Dict[str, Any]:
+        """
+        Return tool definition in canonical schema.
+        This is the single source of truth for tool metadata.
+        """
+        canonical = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters,
+            "meta": {
+                "category": self.category,
+                "max_calls_per_run": self.max_calls_per_run,
+                "parallel_safe": self.parallel_safe,
+            }
+        }
+        # Optionally validate
+        if not validate_canonical_tool(canonical):
+            # Log warning but still return
+            import logging
+            logging.getLogger(__name__).warning(f"Tool {self.name} does not match canonical schema")
+        return canonical
+
     def to_definition(self) -> Dict[str, Any]:
-        """Tool definition for LLM function calling (clean, no internal metadata)."""
+        """Tool definition for LLM function calling (OpenAI-style, kept for compatibility)."""
         return {
             "type": "function",
             "function": {
@@ -119,23 +145,18 @@ class BaseTool(ABC):
         """
         pass
 
+    def validate_args(self, **kwargs) -> Optional[str]:
+        """
+        Validate arguments against parameters schema.
+        Returns error string if invalid, None if valid.
+        Override for custom validation.
+        """
+        # Basic validation: check required parameters
+        required = self.parameters.get("required", [])
+        for req in required:
+            if req not in kwargs:
+                return f"Missing required parameter: {req}"
+        return None
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}: {self.name}>"
-
-
-class SyncTool(BaseTool):
-    """
-    Base class for synchronous tools.
-    Converts sync execute to async for uniform interface.
-    """
-
-    @abstractmethod
-    def _execute_sync(self, **kwargs) -> ToolResult:
-        """Synchronous implementation."""
-        pass
-
-    async def execute(self, **kwargs) -> ToolResult:
-        import asyncio
-        return await asyncio.get_event_loop().run_in_executor(
-            None, lambda: self._execute_sync(**kwargs)
-        )

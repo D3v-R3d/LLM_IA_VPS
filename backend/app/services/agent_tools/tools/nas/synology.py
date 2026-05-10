@@ -1,12 +1,10 @@
 """
-NAS Synology Tools
-
-Tools for interacting with Synology NAS file station.
+Synology NAS tools.
 """
 
 from typing import Optional
 
-from app.services.agent_tools.tools.base_tool import BaseTool, ToolResult
+from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
 
 
 class NasListShareTool(BaseTool):
@@ -70,9 +68,13 @@ class NasListFolderTool(BaseTool):
         }
 
     async def execute(self, **kwargs) -> ToolResult:
+        folder_path = kwargs.get("folder_path", "/")
+
+        if not folder_path:
+            return ToolResult(success=False, error="Missing folder_path")
+
         try:
             from app.services.synology import SynologyClient, SynologyAuth, FileStation
-            folder_path = kwargs.get("folder_path", "/")
             client = SynologyClient()
             auth = SynologyAuth(client)
             auth.login()
@@ -114,10 +116,16 @@ class NasSearchTool(BaseTool):
         }
 
     async def execute(self, **kwargs) -> ToolResult:
+        folder_path = kwargs.get("folder_path", "/")
+        keyword = kwargs.get("keyword", "")
+
+        if not folder_path:
+            return ToolResult(success=False, error="Missing folder_path")
+        if not keyword:
+            return ToolResult(success=False, error="Missing keyword")
+
         try:
             from app.services.synology import SynologyClient, SynologyAuth, FileStation
-            folder_path = kwargs.get("folder_path", "/")
-            keyword = kwargs.get("keyword", "")
             client = SynologyClient()
             auth = SynologyAuth(client)
             auth.login()

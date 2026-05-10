@@ -3,12 +3,18 @@ Google Gemini Provider
 
 LLM provider implementation for Google Gemini API.
 Uses OpenAI-compatible endpoint.
+Tool formatting delegated to GoogleAdapter.
 """
 
 from typing import List, Dict, Any, Optional
 import httpx
+import logging
+
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
+from app.services.agent_tools.providers.adapters.google_adapter import GoogleAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleProvider(LLMProvider):
@@ -28,6 +34,7 @@ class GoogleProvider(LLMProvider):
         self.api_key = api_key or settings.GOOGLE_API_KEY
         self.base_url = base_url or self.BASE_URL
         self._client = httpx.AsyncClient(timeout=180.0)
+        self._adapter = GoogleAdapter()
 
     @property
     def name(self) -> str:
@@ -81,10 +88,13 @@ class GoogleProvider(LLMProvider):
     ) -> Dict[str, Any]:
         import logging
         logger = logging.getLogger(__name__)
+        # Tools from registry are already in OpenAI format (via get_all_definitions)
+        # So we use them directly without adapter conversion
+        provider_tools = tools
         payload = {
             "model": model,
             "messages": messages,
-            "tools": tools,
+            "tools": provider_tools,
             "stream": False
         }
         if options:
@@ -92,7 +102,7 @@ class GoogleProvider(LLMProvider):
             payload.update(safe_options)
 
         # Debug: log payload size and first message
-        logger.info(f"Google API payload: model={model}, messages={len(messages)}, tools={len(tools)}")
+        logger.info(f"Google API payload: model={model}, messages={len(messages)}, tools={len(provider_tools)}")
         if messages:
             first_msg = messages[0] if isinstance(messages[0], dict) else str(messages[0])
             logger.debug(f"First message preview: {str(first_msg)[:200]}")
