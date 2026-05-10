@@ -320,6 +320,7 @@ Do not include any other text. The response must be valid JSON."""
     ) -> Dict:
         """Main execution loop with all improvements."""
         max_steps = min(self.config.max_steps, self.config.hard_limit)
+        all_tool_results = []
 
         for step in range(1, max_steps + 1):
             state.iteration = step
@@ -351,6 +352,7 @@ Do not include any other text. The response must be valid JSON."""
                 return {"direct_response": content, "tool_results": []}
 
             tool_results = await self._execute_with_idempotency(tool_calls, state)
+            all_tool_results.extend(tool_results)
 
             for result in tool_results:
                 if result.success:
@@ -371,7 +373,7 @@ Do not include any other text. The response must be valid JSON."""
 
         return {
             "direct_response": "",
-            "tool_results": tool_results if 'tool_results' in locals() else []
+            "tool_results": all_tool_results
         }
 
     def _update_tool_history(self, tool_calls: List[Dict], state: RunState):
@@ -486,9 +488,9 @@ Do not include any other text. The response must be valid JSON."""
             return Decision.STOP
         state.result_signatures.append(result_sig)
 
-        if state.last_tool_result_success and state.iteration >= 2:
+        if state.last_tool_result_success:
             recent_tools = state.tool_history[-self.config.loop_window_size:]
-            if len(set(recent_tools)) <= 1:
+            if len(set(recent_tools)) <= 1 and len(recent_tools) >= 1:
                 logger.debug("No progress being made, stopping early")
                 return Decision.STOP
 
@@ -585,7 +587,7 @@ Do not include any other text. The response must be valid JSON."""
         direct_response: str,
         state: RunState
     ) -> str:
-        """Structured synthesis with proper formatting - includes actual tool data."""
+        """Simple local synthesis - returns raw formatted results."""
         if not tool_results and direct_response:
             return direct_response
 
@@ -601,21 +603,21 @@ Do not include any other text. The response must be valid JSON."""
             for r in tool_results:
                 if not r:
                     continue
-                    
+
                 tool_name = getattr(r, 'tool', 'unknown')
                 data = getattr(r, 'data', None)
                 error = getattr(r, 'error', None)
-                
+
                 if r.success and data:
                     if isinstance(data, dict):
-                        if "rows" in data and data["rows"]:
+                        if "response" in data:
+                            lines.append(f"**{tool_name}:** {data['response'][:300]}")
+                        elif "rows" in data and data["rows"]:
                             lines.append(f"**{tool_name} results:**")
                             for row in data["rows"][:5]:
                                 lines.append(f"  • {row}")
-                            if len(data["rows"]) > 5:
-                                lines.append(f"  ... et {len(data['rows']) - 5} de plus")
                         elif "tables" in data and data["tables"]:
-                            lines.append(f"**Tables found ({len(data['tables'])}):**")
+                            lines.append(f"**Tables ({len(data['tables'])}):**")
                             for t in data["tables"][:5]:
                                 lines.append(f"  • {t.get('schema', 'public')}.{t.get('name')}")
                         elif "columns" in data and data["columns"]:
@@ -627,7 +629,7 @@ Do not include any other text. The response must be valid JSON."""
                             for s in data["shares"][:5]:
                                 lines.append(f"  • {s.get('name', 'unknown')}")
                         elif "files" in data and data["files"]:
-                            lines.append(f"**Files found ({len(data['files'])}):**")
+                            lines.append(f"**Files ({len(data['files'])}):**")
                             for f in data["files"][:10]:
                                 lines.append(f"  • {f}")
                         else:
@@ -636,8 +638,6 @@ Do not include any other text. The response must be valid JSON."""
                         lines.append(f"**{tool_name}:** {str(data)[:200]}")
                 elif error:
                     lines.append(f"**{tool_name} error:** {error}")
-
-        return "\n".join(lines)
 
         return "\n".join(lines)
 

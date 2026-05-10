@@ -50,6 +50,10 @@ class Settings:
             os.environ.get("ANTHROPIC_API_KEY") or
             _read_secret_file(os.environ.get("ANTHROPIC_API_KEY_FILE", ""))
         )
+        self.OPENROUTER_API_KEY = (
+            os.environ.get("OPENROUTER_API_KEY") or
+            _read_secret_file(os.environ.get("OPENROUTER_API_KEY_FILE", ""))
+        )
         self.LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "google")
         self.TELEGRAM_BOT_TOKEN = (
             os.environ.get("TELEGRAM_BOT_TOKEN") or

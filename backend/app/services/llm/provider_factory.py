@@ -59,7 +59,7 @@ class LLMProviderFactory:
         elif name == "anthropic":
             return AnthropicProvider()
         elif name == "openrouter":
-            return OpenRouterProvider()
+            return OpenRouterProvider(api_key=settings.OPENROUTER_API_KEY)
         else:
             raise ValueError(f"Unknown provider: {name}. Available: ollama, groq, google, anthropic, openrouter")
 
