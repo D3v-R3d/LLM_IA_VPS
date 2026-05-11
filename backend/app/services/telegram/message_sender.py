@@ -217,3 +217,27 @@ class MessageSenderService:
         except Exception as e:
             logger.error(f"Failed to set commands: {e}")
             return False
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        text: Optional[str] = None,
+        show_alert: bool = False
+    ) -> bool:
+        """Answer callback query."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                payload = {"callback_query_id": callback_query_id}
+                if text:
+                    payload["text"] = text
+                    payload["show_alert"] = show_alert
+
+                response = await client.post(
+                    f"{self.api_url}/answerCallbackQuery",
+                    json=payload
+                )
+
+                return response.status_code == 200 and response.json().get("ok", False)
+        except Exception as e:
+            logger.error(f"Failed to answer callback query: {e}")
+            return False

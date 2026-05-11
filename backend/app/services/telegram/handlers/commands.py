@@ -29,13 +29,51 @@ async def handle_start_command(update: TelegramUpdate, context: HandlerContext) 
         token = update.text[5:]
         return await _handle_link_token(update.chat_id, token, context)
 
-    await context.telegram_service.send_welcome_message(update.chat_id)
+    text = (
+        "*Welcome to Tower Bot!*\n\n"
+        "Your AI assistant with NAS access.\n\n"
+        "*Commands:*\n"
+        "/nas - List NAS shares\n"
+        "/ls <folder> - Browse NAS folders\n"
+        "/naslogin - Connect to NAS\n"
+        "/model - List/switch AI models (/model list, /model switch <id>)\n"
+        "/status - Check your account\n"
+        "/help - Show this help\n"
+    )
+    await context.telegram_service.send_message(update.chat_id, text)
     return None
 
 
 async def handle_help_command(update: TelegramUpdate, context: HandlerContext) -> Optional[str]:
     """Handle /help command."""
-    await context.telegram_service.send_help_message(update.chat_id)
+    text = (
+        "*Tower Bot Help*\n\n"
+        "*AI Commands (via chat):*\n"
+        "Ask me anything! I have access to:\n"
+        "• Web search & fetch URLs\n"
+        "• NAS file browsing\n"
+        "• Database queries\n"
+        "• File operations (read, write, edit)\n"
+        "• System commands (bash, docker, git)\n\n"
+        "*Direct Commands:*\n"
+        "/nas - List all shared folders on NAS\n"
+        "/ls <folder> - List files in folder\n"
+        "/naslogin - Connect to Synology NAS\n"
+        "/status - Check connection status\n"
+        "/link <email> - Link your account\n"
+        "/unlink - Unlink your account\n"
+        "/new - Start new session\n"
+        "/reset - Clear conversation\n"
+        "/compress - Summarize conversation\n"
+        "/sessions - List your sessions\n"
+        "/prefs - Show preferences\n"
+        "/setpref key=value - Set preference\n"
+        "/model - Switch AI model\n\n"
+        "*Messaging:*\n"
+        "Just type your message to chat with Tower!\n"
+        "Example: \"list my nas folders\" or \"search web for python\"\n"
+    )
+    await context.telegram_service.send_message(update.chat_id, text)
     return None
 
 

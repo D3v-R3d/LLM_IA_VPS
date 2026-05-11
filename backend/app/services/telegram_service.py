@@ -1,14 +1,21 @@
 """
-Telegram Service
+Telegram Service - Pure Facade
 
 Unified interface for Telegram bot functionality.
-Uses services from app.services.telegram subfolder.
+All calls delegated to sub-services in app.services.telegram subfolder.
+
+Single source of truth:
+- MessageSenderService: send_message, send_notification, send_chat_action, send_photo,
+                       get_me, health_check, set_my_commands, answer_callback_query
+- WebhookHandlerService: verify_webhook, set_webhook, delete_webhook, get_webhook_info,
+                         extract_command, extract_chat_id, extract_message_text, parse_update
+- CommandParserService: parse, handle, register (command routing)
 """
 
-from typing import Optional, Dict, Any
-import httpx
 import logging
 import threading
+from typing import Optional, Dict, Any, Callable, Awaitable
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +33,21 @@ def get_cached_telegram_service() -> "TelegramService":
     return _service_cache
 
 
+@dataclass
+class CommandResult:
+    """Result of command parsing."""
+    command: str
+    args: Optional[str]
+    handled: bool
+    response: Optional[str] = None
+
+
 class TelegramService:
     """
-    Unified Telegram bot service.
+    Unified Telegram bot service - PURE FACADE.
 
-    Combines:
-    - WebhookHandlerService: Webhook verification and parsing
-    - MessageSenderService: Sending messages
+    All implementation delegated to sub-services.
+    NO business logic, NO direct HTTP calls.
 
     Use get_cached_telegram_service() for singleton access.
     """
@@ -42,14 +57,15 @@ class TelegramService:
         from app.core.config import settings
         from app.services.telegram import (
             WebhookHandlerService,
-            MessageSenderService
+            MessageSenderService,
+            CommandParserService,
         )
 
         self.bot_token = bot_token or settings.TELEGRAM_BOT_TOKEN
-        self.api_url = f"https://api.telegram.org/bot{self.bot_token}"
 
-        self.webhook = WebhookHandlerService()
+        self.webhook = WebhookHandlerService(bot_token=self.bot_token)
         self.sender = MessageSenderService(bot_token=self.bot_token)
+        self.parser = CommandParserService()
 
     async def send_message(
         self,
@@ -91,56 +107,33 @@ class TelegramService:
         """Send chat action."""
         return await self.sender.send_chat_action(chat_id=chat_id, action=action)
 
-    def verify_webhook(self, secret_token: Optional[str] = None) -> bool:
-        """Verify webhook request."""
-        return self.webhook.verify_webhook(secret_token)
+    async def send_photo(
+        self,
+        chat_id: str,
+        photo_url: str,
+        caption: Optional[str] = None,
+        disable_notification: bool = False
+    ) -> bool:
+        """Send photo."""
+        return await self.sender.send_photo(
+            chat_id=chat_id,
+            photo_url=photo_url,
+            caption=caption,
+            disable_notification=disable_notification
+        )
 
-    def parse_command(self, text: str) -> tuple[Optional[str], Optional[str]]:
-        """Parse command from message text."""
-        return self.webhook.extract_command(text)
-
-    async def set_webhook(self, url: str, secret_token: Optional[str] = None) -> bool:
-        """Set webhook URL."""
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                payload = {"url": url, "max_connections": 100}
-                if secret_token:
-                    payload["secret_token"] = secret_token
-
-                response = await client.post(
-                    f"{self.api_url}/setWebhook",
-                    json=payload
-                )
-
-                result = response.json()
-                return result.get("ok", False) and result.get("result", False)
-
-        except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
-            return False
-
-    async def delete_webhook(self) -> bool:
-        """Delete webhook."""
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(f"{self.api_url}/deleteWebhook")
-                result = response.json()
-                return result.get("ok", False)
-        except Exception as e:
-            logger.error(f"Failed to delete webhook: {e}")
-            return False
-
-    async def get_webhook_info(self) -> Optional[Dict[str, Any]]:
-        """Get webhook info."""
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.api_url}/getWebhookInfo")
-                if response.status_code == 200:
-                    return response.json().get("result")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to get webhook info: {e}")
-            return None
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        text: Optional[str] = None,
+        show_alert: bool = False
+    ) -> bool:
+        """Answer callback query."""
+        return await self.sender.answer_callback_query(
+            callback_query_id=callback_query_id,
+            text=text,
+            show_alert=show_alert
+        )
 
     async def get_me(self) -> Optional[Dict[str, Any]]:
         """Get bot info."""
@@ -154,72 +147,34 @@ class TelegramService:
         """Set bot command menu."""
         return await self.sender.set_my_commands(commands)
 
-    async def answer_callback_query(
+    def verify_webhook(self, secret_token: Optional[str] = None) -> bool:
+        """Verify webhook request."""
+        return self.webhook.verify_webhook(secret_token)
+
+    async def set_webhook(self, url: str, secret_token: Optional[str] = None) -> bool:
+        """Set webhook URL."""
+        return await self.webhook.set_webhook(url, secret_token)
+
+    async def delete_webhook(self) -> bool:
+        """Delete webhook."""
+        return await self.webhook.delete_webhook()
+
+    async def get_webhook_info(self) -> Optional[Dict[str, Any]]:
+        """Get webhook info."""
+        return await self.webhook.get_webhook_info()
+
+    def parse_command(self, text: str) -> tuple[Optional[str], Optional[str]]:
+        """Parse command from message text."""
+        return self.parser.parse(text)
+
+    def register_command(
         self,
-        callback_query_id: str,
-        text: Optional[str] = None,
-        show_alert: bool = False
-    ) -> bool:
-        """Answer callback query."""
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                payload = {"callback_query_id": callback_query_id}
-                if text:
-                    payload["text"] = text
-                    payload["show_alert"] = show_alert
+        command: str,
+        handler: Callable[[Optional[str]], Awaitable[CommandResult]]
+    ) -> None:
+        """Register a command handler."""
+        self.parser.register(command, handler)
 
-                response = await client.post(
-                    f"{self.api_url}/answerCallbackQuery",
-                    json=payload
-                )
-
-                return response.status_code == 200 and response.json().get("ok", False)
-        except Exception as e:
-            logger.error(f"Failed to answer callback query: {e}")
-            return False
-
-    async def send_welcome_message(self, chat_id: str) -> bool:
-        """Send welcome message."""
-        text = (
-            "*Welcome to Tower Bot!*\n\n"
-            "Your AI assistant with NAS access.\n\n"
-            "*Commands:*\n"
-            "/nas - List NAS shares\n"
-            "/ls <folder> - Browse NAS folders\n"
-            "/naslogin - Connect to NAS\n"
-            "/model - List/switch AI models (/model list, /model switch <id>)\n"
-            "/status - Check your account\n"
-            "/help - Show this help\n"
-        )
-        return await self.send_message(chat_id, text)
-
-    async def send_help_message(self, chat_id: str) -> bool:
-        """Send help message."""
-        text = (
-            "*Tower Bot Help*\n\n"
-            "*AI Commands (via chat):*\n"
-            "Ask me anything! I have access to:\n"
-            "• Web search & fetch URLs\n"
-            "• NAS file browsing\n"
-            "• Database queries\n"
-            "• File operations (read, write, edit)\n"
-            "• System commands (bash, docker, git)\n\n"
-            "*Direct Commands:*\n"
-            "/nas - List all shared folders on NAS\n"
-            "/ls <folder> - List files in folder\n"
-            "/naslogin - Connect to Synology NAS\n"
-            "/status - Check connection status\n"
-            "/link <email> - Link your account\n"
-            "/unlink - Unlink your account\n"
-            "/new - Start new session\n"
-            "/reset - Clear conversation\n"
-            "/compress - Summarize conversation\n"
-            "/sessions - List your sessions\n"
-            "/prefs - Show preferences\n"
-            "/setpref key=value - Set preference\n"
-            "/model - Switch AI model\n\n"
-            "*Messaging:*\n"
-            "Just type your message to chat with Tower!\n"
-            "Example: \"list my nas folders\" or \"search web for python\"\n"
-        )
-        return await self.send_message(chat_id, text)
+    async def handle_command(self, text: str) -> Optional[CommandResult]:
+        """Handle command and return result."""
+        return await self.parser.handle(text)

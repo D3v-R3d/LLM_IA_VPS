@@ -5,6 +5,7 @@ Handles incoming Telegram webhook updates.
 """
 
 import hmac
+import httpx
 import logging
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
@@ -24,8 +25,13 @@ class WebhookHandlerService:
     """
     Service for handling Telegram webhook requests.
 
-    Verifies webhook authenticity and parses updates.
+    Verifies webhook authenticity, parses updates, and manages webhook URL.
     """
+
+    def __init__(self, bot_token: Optional[str] = None):
+        from app.core.config import settings
+        self.bot_token = bot_token or settings.TELEGRAM_BOT_TOKEN
+        self.api_url = f"https://api.telegram.org/bot{self.bot_token}"
 
     def verify_webhook(self, secret_token: Optional[str] = None) -> bool:
         """
@@ -113,3 +119,46 @@ class WebhookHandlerService:
             command = command.split("@")[0]
 
         return command, args
+
+    async def set_webhook(self, url: str, secret_token: Optional[str] = None) -> bool:
+        """Set webhook URL."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                payload = {"url": url, "max_connections": 100}
+                if secret_token:
+                    payload["secret_token"] = secret_token
+
+                response = await client.post(
+                    f"{self.api_url}/setWebhook",
+                    json=payload
+                )
+
+                result = response.json()
+                return result.get("ok", False) and result.get("result", False)
+
+        except Exception as e:
+            logger.error(f"Failed to set webhook: {e}")
+            return False
+
+    async def delete_webhook(self) -> bool:
+        """Delete webhook."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(f"{self.api_url}/deleteWebhook")
+                result = response.json()
+                return result.get("ok", False)
+        except Exception as e:
+            logger.error(f"Failed to delete webhook: {e}")
+            return False
+
+    async def get_webhook_info(self) -> Optional[Dict[str, Any]]:
+        """Get webhook info."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{self.api_url}/getWebhookInfo")
+                if response.status_code == 200:
+                    return response.json().get("result")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get webhook info: {e}")
+            return None
