@@ -52,13 +52,14 @@ async def telegram_webhook(request: Request) -> dict:
         )
 
     body = await request.json()
-    logger.info(f"Telegram webhook received: update_id={body.get('update_id')}")
+    update_id = body.get("update_id")
+    logger.info(f"Telegram webhook received: update_id={update_id}")
 
     async def process():
         try:
             logger.info(f"Background processing start")
             pipeline = get_message_pipeline()
-            await pipeline.process(body)
+            await pipeline.process(body, update_id=str(update_id) if update_id else None)
             logger.info(f"Background processing done")
         except Exception as e:
             logger.exception(f"Background error: {e}")

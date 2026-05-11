@@ -8,8 +8,12 @@ Handles session resolution, context building, agent execution, and response savi
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Optional
+
+from app.observability.event_logger import EventLogger
+from app.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,7 @@ class ChatOrchestrator:
         self._agent = agent_runner
         self._context = context_builder
 
-    async def route_message(self, chat_id: str, user_id: Optional[int], text: str) -> Optional[str]:
+    async def route_message(self, chat_id: str, user_id: Optional[int], text: str, run_id: str = None, event_logger=None) -> Optional[str]:
         """
         Process a chat message and return response text.
 
@@ -71,6 +75,13 @@ class ChatOrchestrator:
         db = next(db_gen)
 
         try:
+            if event_logger and run_id:
+                event_logger.emit(
+                    event_type=EventType.AGENT_START,
+                    event_name="agent_start",
+                    payload={"model": None, "provider": None, "message_preview": text[:100]},
+                )
+
             user = self._user.get_by_telegram_chat_id(db, chat_id)
             if not user:
                 logger.warning(f"No linked user for chat_id={chat_id}")
@@ -78,6 +89,13 @@ class ChatOrchestrator:
                     chat_id,
                     "❌ Account not linked. Use /link <email> to link your account."
                 )
+                if event_logger and run_id:
+                    event_logger.emit_error(
+                        error_type="AccountNotLinked",
+                        error_message="No linked user for chat_id",
+                        chat_id=chat_id,
+                        run_id=run_id,
+                    )
                 return None
 
             session = await self._resolve_session(db, user, chat_id)
@@ -85,6 +103,14 @@ class ChatOrchestrator:
                 return None
 
             conversation = session
+
+            if event_logger and run_id:
+                event_logger.set_user_id(str(user.id))
+                event_logger.emit(
+                    event_type=EventType.SESSION_RESOLVED,
+                    event_name="session_resolved",
+                    payload={"session_id": getattr(session, 'id', None), "conversation_id": str(conversation.id) if conversation else None},
+                )
 
             prefs = {}
             if user.model_prefs:
@@ -137,15 +163,26 @@ class ChatOrchestrator:
                 provider_name=prefs.get("provider"),
                 db_session=db,
                 conversation_id=conversation.id,
+                run_id=run_id,
             )
 
             logger.info(f"Synthesis check - provider: {prefs.get('provider')}, model: {prefs.get('model')}, response_len: {len(response)}")
+            synthesis_start = time.time()
             if prefs.get("provider") or prefs.get("model"):
                 logger.info("Calling synthesize response...")
                 response = await self._synthesize_response(
                     response, prefs.get("provider"), prefs.get("model")
                 )
                 logger.info(f"Synthesis result len: {len(response)}")
+
+            if event_logger and run_id:
+                synthesis_duration = int((time.time() - synthesis_start) * 1000)
+                event_logger.emit(
+                    event_type=EventType.SYNTHESIS,
+                    event_name="synthesis",
+                    payload={"input_length": len(response), "output_length": len(response), "synthesis_model": prefs.get("model")},
+                    duration_ms=synthesis_duration,
+                )
 
             self._message.create(
                 db=db,
@@ -159,10 +196,24 @@ class ChatOrchestrator:
 
             self._conversation.update_timestamp(db, conversation.id)
 
+            if event_logger and run_id:
+                event_logger.emit(
+                    event_type=EventType.AGENT_END,
+                    event_name="agent_end",
+                    payload={"success": True, "final_response_length": len(response)},
+                )
+
             return response
 
         except Exception as e:
             logger.exception(f"ChatOrchestrator error: {e}")
+            if event_logger and run_id:
+                event_logger.emit_error(
+                    error_type="ChatOrchestratorError",
+                    error_message=str(e),
+                    chat_id=chat_id,
+                    run_id=run_id,
+                )
             return "I'm thinking... Please try again in a moment."
         finally:
             db.close()

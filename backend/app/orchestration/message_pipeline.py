@@ -11,6 +11,7 @@ Handles the message flow:
 
 import asyncio
 import logging
+import uuid
 from typing import Optional
 
 from app.core.lock_manager import LockManager, get_lock_manager
@@ -23,6 +24,8 @@ from app.services.telegram_service import get_cached_telegram_service
 from app.services.user_service import UserService
 from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
+from app.observability.event_logger import EventLogger
+from app.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +59,13 @@ class MessagePipeline:
         router.register(CallbackQueryHandler())
         return router
 
-    async def process(self, update_data: dict) -> None:
+    async def process(self, update_data: dict, update_id: str = None) -> None:
         """
         Process a Telegram update.
         """
         logger.info(f"Pipeline.process() called")
+        run_id = str(uuid.uuid4())
+
         try:
             update = self._parse_update(update_data)
             if not update:
@@ -69,7 +74,6 @@ class MessagePipeline:
 
             logger.info(f"Parsed update: chat_id={update.chat_id}")
 
-            # Skip rate limiter for test chat IDs
             if update.chat_id == "test":
                 pass
             elif not await self._limiter.allow(update.chat_id):
@@ -80,7 +84,7 @@ class MessagePipeline:
                 return
 
             logger.info("Calling _process_with_lock")
-            await self._process_with_lock(update)
+            await self._process_with_lock(update, run_id, update_id=str(update_id) if update_id else None)
             logger.info("_process_with_lock done")
 
         except Exception as e:
@@ -98,7 +102,7 @@ class MessagePipeline:
 
         return TelegramUpdate.from_dict(data)
 
-    async def _process_with_lock(self, update: TelegramUpdate) -> None:
+    async def _process_with_lock(self, update: TelegramUpdate, run_id: str, update_id: str = None) -> None:
         """Process update while holding the lock."""
         logger.info(f"Acquiring lock for chat_id={update.chat_id}")
         async with await self._locks.acquire(update.chat_id):
@@ -107,22 +111,42 @@ class MessagePipeline:
             db = next(db_gen)
             logger.info(f"DB session obtained for chat_id={update.chat_id}")
 
+            event_logger = EventLogger(db=db, run_id=run_id, chat_id=update.chat_id)
+            telegram_update_id = update_id or str(update.raw.get("update_id", ""))
+
             try:
-                context = self._build_context(db)
+                context = self._build_context(db, run_id=run_id, chat_id=update.chat_id, event_logger=event_logger)
                 logger.info(f"Context built for chat_id={update.chat_id}")
+
+                await event_logger.emit_async(
+                    event_type=EventType.LOCK_ACQUIRED,
+                    event_name="lock_acquired",
+                    payload={"chat_id": update.chat_id},
+                    telegram_update_id=telegram_update_id,
+                )
+
                 response = await self._router.route(update, context)
                 logger.info(f"Route completed for chat_id={update.chat_id}, response={response[:50] if response else 'none'}")
 
                 if response:
                     logger.info(f"Sending response for chat_id={update.chat_id}")
-                    await context.telegram_service.send_message(update.chat_id, response)
+                    msg_id = await context.telegram_service.send_message(update.chat_id, response)
                     logger.info(f"Response sent for chat_id={update.chat_id}")
 
+                    await event_logger.emit_async(
+                        event_type=EventType.TELEGRAM_SENT,
+                        event_name="telegram_sent",
+                        payload={"chat_id": update.chat_id, "message_id": str(msg_id) if msg_id else None, "response_length": len(response)},
+                        telegram_update_id=telegram_update_id,
+                    )
+
             finally:
+                if event_logger:
+                    event_logger.flush()
                 db.close()
                 next(db_gen, None)
 
-    def _build_context(self, db) -> HandlerContext:
+    def _build_context(self, db, run_id: str = None, chat_id: str = None, event_logger=None) -> HandlerContext:
         """Build handler context with services."""
         telegram = get_cached_telegram_service()
         user = UserService()
@@ -135,6 +159,9 @@ class MessagePipeline:
             user_service=user,
             conversation_service=conversation,
             message_service=message,
+            run_id=run_id,
+            chat_id=chat_id,
+            event_logger=event_logger,
         )
 
     def _get_db(self):

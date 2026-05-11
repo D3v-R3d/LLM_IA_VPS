@@ -25,7 +25,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.models.document import Document
 from app.models.user_model_prefs import UserModelPrefs
-from app.models.llm_log import LlmLog
+from app.models.agent_event import AgentEvent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -51,5 +51,5 @@ __all__ = [
     "MessageRole",
     "Document",
     "UserModelPrefs",
-    "LlmLog",
+    "AgentEvent",
 ]

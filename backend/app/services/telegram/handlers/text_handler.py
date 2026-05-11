@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 from app.services.telegram.handlers.base import BaseHandler, TelegramUpdate, HandlerContext
+from app.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,21 @@ class TextHandler(BaseHandler):
         try:
             is_linked, user = await _require_linked_account(update.chat_id, context, "Chatting")
             if not is_linked:
+                if context.event_logger:
+                    await context.event_logger.emit_async(
+                        event_type=EventType.ACCOUNT_NOT_LINKED,
+                        event_name="account_not_linked",
+                        payload={"chat_id": update.chat_id, "action": "Chatting"},
+                    )
                 return None
+
+            if context.event_logger:
+                context.event_logger.set_user_id(str(user.id))
+                await context.event_logger.emit_async(
+                    event_type=EventType.USER_RESOLVED,
+                    event_name="user_resolved",
+                    payload={"user_id": str(user.id), "username": getattr(user, 'username', None) or getattr(user, 'email', None)},
+                )
 
             if self._orchestrator is None:
                 from app.services.agent_tools import get_registry
@@ -66,6 +81,8 @@ class TextHandler(BaseHandler):
                 chat_id=update.chat_id,
                 user_id=user.id,
                 text=update.text,
+                run_id=context.run_id,
+                event_logger=context.event_logger,
             )
 
             return response

@@ -63,6 +63,7 @@ class AgentRunner:
         provider_name: Optional[str] = None,
         db_session=None,
         conversation_id: Optional[uuid.UUID] = None,
+        run_id: Optional[str] = None,
     ) -> str:
         """Route all requests to AgentOrchestrator."""
         if self._orchestrator is None:
@@ -81,4 +82,5 @@ class AgentRunner:
             provider_name=provider_name,
             db_session=db_session,
             conversation_id=conversation_id,
+            run_id=run_id,
         )

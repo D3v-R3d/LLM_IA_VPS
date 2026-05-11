@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Any
 
 from app.services.agent_core.models import Decision, Plan, RunState, detect_loop_v2, generate_call_key
+from app.observability.event_logger import EventLogger
+from app.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +125,13 @@ class AgentOrchestrator:
         tools: Optional[List[Dict]] = None,
         db_session: Any = None,
         conversation_id: Any = None,
+        run_id: Optional[str] = None,
     ) -> str:
         """Main entry point - full agent flow."""
         logger.debug(f"Orchestrator run: user_message={user_message[:50]}...")
 
         state = RunState()
+        state.run_id = run_id
 
         intent_result = self.intent_classification(user_message)
         complexity = intent_result["complexity"]
@@ -168,81 +172,109 @@ class AgentOrchestrator:
 
     # _pack removed — logic now lives in intent_classifier.classify_message
 
+import re
+
+SPLIT_PATTERN = re.compile(
+    r"\b(?:and|then|after|ensuite|puis|plus)\b",
+    re.I
+)
+
+TOOL_PATTERNS = [
+    (["list", "directory", "folder"], ("List directory contents", "ls")),
+    (["read", "file"], ("Read file content", "read_file")),
+    (["write", "create"], ("Write to file", "write_file")),
+    (["search", "find"], ("Search for content", "grep")),
+    (["docker"], ("Docker operation", "docker")),
+    (["bash", "command", "execute"], ("Execute command", "bash")),
+]
+
+
     def _lightweight_plan(self, message: str) -> Plan:
-        """Simple heuristic - split by conjunctions."""
         steps = []
         expected_tools = []
+        seen = set()
 
-        parts = re.split(r'\b(?:and|then|after|ensuite|puis|plus)\b', message.lower())
-
-        for part in parts:
+        for part in SPLIT_PATTERN.split(message.lower()):
             part = part.strip()
             if not part:
                 continue
 
-            if "list" in part or "directory" in part or "folder" in part:
-                steps.append("List directory contents")
-                expected_tools.append("ls")
-            elif "read" in part and "file" in part:
-                steps.append("Read file content")
-                expected_tools.append("read_file")
-            elif "write" in part or "create" in part:
-                steps.append("Write to file")
-                expected_tools.append("write_file")
-            elif "search" in part or "find" in part:
-                steps.append("Search for content")
-                expected_tools.append("grep")
-            elif "docker" in part:
-                steps.append("Docker operation")
-                expected_tools.append("docker")
-            elif "bash" in part or "command" in part or "execute" in part:
-                steps.append("Execute command")
-                expected_tools.append("bash")
+            for keywords, (step, tool) in TOOL_PATTERNS:
+                if all(k in part for k in keywords):
+                    if tool not in seen:
+                        seen.add(tool)
+                        steps.append(step)
+                        expected_tools.append(tool)
+                    break
 
-        return Plan(steps=steps, expected_tools=expected_tools)
+        if not steps:
+            steps.append("Analyze request")
+            expected_tools.append("none")
+
+        return Plan(
+            steps=steps,
+            expected_tools=expected_tools
+        )
 
     async def plan(self, message: str, complexity: int) -> Optional[Plan]:
         """Generate a plan based on message complexity."""
-        if complexity >= 4:
-            return await self._llm_plan(message)
-        return self._lightweight_plan(message)
+        return await self._llm_plan(message)
 
     async def _llm_plan(self, message: str) -> Optional[Plan]:
         """LLM-based structured planning for complexity 4-5 with strict JSON validation."""
-        from app.services.llm.provider_factory import provider_factory
-        from app.services.agent_tools.registry import get_registry
-        from app.core.config import settings
 
+        from app.services.llm.provider_factory import provider_factory
+        from app.core.config import settings
         from app.services.prompt_service import PromptService
         from app.services.agent_core.intent_classifier import select_tools_for_message
 
         tools_list = ", ".join(select_tools_for_message(message)) if message else "none"
 
         planning_template = PromptService.get_planning_prompt()
-        planning_prompt = planning_template.format(message=message, available_tools=tools_list)
+
+        # 1. Build prompt safely
+        try:
+            planning_prompt = planning_template.format(
+                message=message,
+                available_tools=tools_list
+            )
+        except Exception as e:
+            logger.error(f"Planning prompt formatting failed: {e}")
+            return self._lightweight_plan(message)
 
         try:
             provider = provider_factory.get_provider(settings.LLM_PROVIDER)
+
             response = await provider.chat(
                 model=settings.LLM_MODEL or "default",
                 messages=[{"role": "user", "content": planning_prompt}],
                 options={"max_tokens": 500}
             )
 
-            content = response.get("content", "") if isinstance(response, dict) else str(response)
+            content = response.get("content") if isinstance(response, dict) else str(response)
 
+            # 2. Parse strictly
             plan_data = self._parse_json_plan_strict(content)
-            if plan_data:
-                return Plan(
-                    steps=plan_data.get("steps", []),
-                    expected_tools=plan_data.get("tools", [])
-                )
-            else:
-                logger.info("LLM plan validation failed, using fallback lightweight plan")
-        except Exception as e:
-            logger.warning(f"LLM planning failed: {e}, falling back to lightweight")
 
-        return self._lightweight_plan(message)
+            if not plan_data:
+                logger.warning("LLM returned invalid plan JSON → fallback lightweight")
+                return self._lightweight_plan(message)
+
+            steps = plan_data.get("steps", [])
+            tools = plan_data.get("tools", [])
+
+            if not steps:
+                logger.warning("LLM plan empty → fallback lightweight")
+                return self._lightweight_plan(message)
+
+            return Plan(
+                steps=steps,
+                expected_tools=tools
+            )
+
+        except Exception as e:
+            logger.warning(f"LLM planning failed: {e}")
+            return self._lightweight_plan(message)
 
     def _parse_json_plan_strict(self, content: str) -> Optional[Dict]:
         """Strict JSON parsing with validation."""
@@ -292,7 +324,7 @@ class AgentOrchestrator:
             state.step_retries = 0
             logger.debug(f"Execution step: {step}/{max_steps}")
 
-            response = await self._call_llm(context, model, provider_name, db_session)
+            response = await self._call_llm(context, model, provider_name, db_session, run_id=state.run_id)
 
             tool_calls = self._parse_tool_calls(response)
 
@@ -324,7 +356,7 @@ class AgentOrchestrator:
                         "tool_results": []
                     }
 
-            tool_results = await self._execute_with_idempotency(tool_calls, state)
+            tool_results = await self._execute_with_idempotency(tool_calls, state, db_session=db_session)
             all_tool_results.extend(tool_results)
 
             for result in tool_results:
@@ -364,7 +396,8 @@ class AgentOrchestrator:
     async def _execute_with_idempotency(
         self,
         tool_calls: List[Dict],
-        state: RunState
+        state: RunState,
+        db_session: Any = None
     ) -> List:
         """
         Execute tools with:
@@ -372,6 +405,13 @@ class AgentOrchestrator:
         - Unique call_id for results (FIX 2)
         - Exponential backoff (FIX 7)
         """
+        event_logger = None
+        if db_session and state.run_id:
+            try:
+                event_logger = EventLogger(db=db_session, run_id=state.run_id, chat_id=None)
+            except Exception:
+                pass
+
         results = []
 
         for i, tc in enumerate(tool_calls):
@@ -389,6 +429,13 @@ class AgentOrchestrator:
                     results.append(prev["result"])
                     continue
 
+            if event_logger:
+                event_logger.emit_tool_call(
+                    tool_name=tool_name,
+                    call_id=call_key,
+                    arguments=tc.get("function", {}).get("arguments", {}),
+                )
+
             result = await self.tool_executor.execute_batch([tc])
             tool_result = result[0] if result else None
 
@@ -397,6 +444,17 @@ class AgentOrchestrator:
                 "result": tool_result,
                 "tool_name": tool_name
             }
+
+            if event_logger:
+                result_size = len(str(tool_result.data)) if tool_result and tool_result.data else 0
+                event_logger.emit_tool_result(
+                    tool_name=tool_name,
+                    call_id=call_key,
+                    success=bool(tool_result and tool_result.success),
+                    duration_ms=int(tool_result.metadata.duration_ms) if tool_result and tool_result.metadata else 0,
+                    result_size=result_size,
+                    error=tool_result.error if tool_result and not tool_result.success else None,
+                )
 
             results.append(tool_result)
 
@@ -407,12 +465,13 @@ class AgentOrchestrator:
 
         for idx, result in failed:
             tool_name = tool_calls[idx].get("function", {}).get("name", "")
+            retry_call_key = generate_call_key(tool_calls[idx])
 
             if tool_name in NO_RETRY_TOOLS:
                 logger.debug(f"Skipping retry for {tool_name} (side-effect tool)")
                 continue
 
-            retry_key = f"retry_{call_key}"
+            retry_key = f"retry_{retry_call_key}"
             retry_count = state.tool_call_counts.get(retry_key, 0)
             if retry_count >= self.config.max_retries_per_tool:
                 logger.debug(f"Max retries reached for {tool_name}")
@@ -428,7 +487,7 @@ class AgentOrchestrator:
             retry_result = await self.tool_executor.execute_batch([tool_calls[idx]])
             if retry_result:
                 results[idx] = retry_result[0]
-                state.executed_calls[call_key] = {
+                state.executed_calls[retry_call_key] = {
                     "status": "success" if retry_result[0].success else "failed",
                     "result": retry_result[0],
                     "tool_name": tool_name,
@@ -554,12 +613,12 @@ class AgentOrchestrator:
     # SYNTHESIS
     # ═══════════════════════════════════════════════════════════════════════
 
-   async def synthesize(
-       self,
-       tool_results: List,
-       direct_response: str,
-       state: RunState
-   ) -> str:
+    async def synthesize(
+        self,
+        tool_results: List,
+        direct_response: str,
+        state: RunState
+    ) -> str:
        """Telegram-style natural synthesis."""
 
        sections = []
@@ -714,7 +773,7 @@ class AgentOrchestrator:
     # LLM CALL
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None) -> Dict:
+    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None, run_id: str = None) -> Dict:
         """Call LLM using existing provider layer."""
         from app.services.llm.provider_factory import provider_factory
         from app.services.agent_tools.registry import get_registry
@@ -728,20 +787,21 @@ class AgentOrchestrator:
             model = settings.LLM_MODEL or "default"
 
         start_time = time.time()
-        request_id = None
+        event_logger = None
 
-        if db_session:
+        if db_session and run_id:
             try:
-                from app.services.llm_logger import LlmLogger
-                llm_logger = LlmLogger(db_session)
-                request_id = llm_logger.log_request(
-                    provider=provider_name or settings.LLM_PROVIDER,
-                    model=model,
-                    messages=context,
-                    tool_count=len(tools)
-                )
+                event_logger = EventLogger(db=db_session, run_id=run_id, chat_id=None)
             except Exception:
                 pass
+
+        if event_logger:
+            event_logger.emit_llm_request(
+                model=model,
+                provider=provider_name or settings.LLM_PROVIDER,
+                prompt_length=sum(len(str(m.get("content", ""))) for m in context),
+                tools_count=len(tools),
+            )
 
         try:
             response = await provider.chat_with_tools(
@@ -751,16 +811,16 @@ class AgentOrchestrator:
             )
 
             duration_ms = int((time.time() - start_time) * 1000)
-            if db_session and request_id:
+            if event_logger:
                 try:
-                    from app.services.llm_logger import LlmLogger
-                    llm_logger = LlmLogger(db_session)
-                    llm_logger.log_response(
-                        request_id=request_id,
-                        response=response,
+                    content = response.get("message", {}).get("content", "") or ""
+                    event_logger.emit_llm_response(
+                        model=model,
+                        provider=provider_name or settings.LLM_PROVIDER,
+                        tokens_in=0,
+                        tokens_out=0,
                         duration_ms=duration_ms,
-                        success=True,
-                        iterations=1
+                        response_preview=content[:500] if content else None,
                     )
                 except Exception:
                     pass
@@ -768,16 +828,11 @@ class AgentOrchestrator:
             return response
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            if db_session and request_id:
+            if event_logger:
                 try:
-                    from app.services.llm_logger import LlmLogger
-                    llm_logger = LlmLogger(db_session)
-                    llm_logger.log_response(
-                        request_id=request_id,
-                        response={"error": str(e)},
-                        duration_ms=duration_ms,
-                        success=False,
-                        iterations=1
+                    event_logger.emit_error(
+                        error_type="LLMCallError",
+                        error_message=str(e),
                     )
                 except Exception:
                     pass

@@ -18,3 +18,6 @@ test
 
 ## Note at 2026-05-11T00:12:48.115624
 Ceci est une note de test.
+
+## Note at 2026-05-11T10:31:38.468600
+Pourquoi les plongeurs plongent-ils toujours en arrière ? Parce que s'ils plongeaient en avant, ils tomberaient dans le bateau ! ⚓️

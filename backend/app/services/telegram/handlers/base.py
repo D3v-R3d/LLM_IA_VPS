@@ -102,12 +102,18 @@ class HandlerContext:
         user_service,
         conversation_service=None,
         message_service=None,
+        run_id: str = None,
+        chat_id: str = None,
+        event_logger=None,
     ):
         self.db = db
         self.telegram_service = telegram_service
         self.user_service = user_service
         self.conversation_service = conversation_service
         self.message_service = message_service
+        self.run_id = run_id
+        self.chat_id = chat_id
+        self.event_logger = event_logger
         self._services = {}
 
     def set(self, key: str, value) -> None:

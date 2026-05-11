@@ -36,6 +36,7 @@ class RunState:
     last_tool_result_success: bool = True
     executed_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     result_signatures: List[str] = field(default_factory=list)
+    run_id: Optional[str] = None
 
 
 def detect_loop_v2(
