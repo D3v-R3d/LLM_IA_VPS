@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "tools_index"
 VECTOR_SIZE = 768
-SCORE_THRESHOLD = 0.35
+SCORE_THRESHOLD = 0.45
 
 
 def get_all_tools() -> Dict:

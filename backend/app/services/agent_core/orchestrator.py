@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Any
 
 from app.services.agent_core.models import Decision, Plan, RunState, detect_loop_v2, generate_call_key
-from app.services.agent_core.intent_classifier import select_tools_for_message
+from app.services.agent_core.intent_classifier import classify_message
 from app.observability.event_logger import EventLogger
 from app.observability.event_types import EventType, EventLevel
 
@@ -189,7 +189,28 @@ class AgentOrchestrator:
 
             context = self._build_context(system_prompt, messages_history, user_message)
             
-            selected_tool_names = select_tools_for_message(user_message) if user_message else []
+            # NEW: Hybrid routing - deterministic router first, then embeddings fallback
+            selected_tool_names = None
+            
+            if user_message:
+                # Step 1: Try deterministic router (fast path <1ms)
+                from app.services.agent_core.tool_router import route as route_tools
+                router_tools = route_tools(user_message)
+                if router_tools:
+                    selected_tool_names = router_tools
+                    logger.info(f"Router tools (fast path): {selected_tool_names}")
+            
+            # Step 2: Fallback to embeddings if router returned None
+            if selected_tool_names is None and user_message:
+                from app.services.tool_registry.registry import search_tools
+                results = search_tools(user_message, limit=15)
+                selected_tool_names = [r["name"] for r in results if r["score"] >= 0.45]
+                logger.info(f"Embedding tools (fallback): {selected_tool_names}")
+            
+            # Step 3: Empty list if nothing found
+            if selected_tool_names is None:
+                selected_tool_names = []
+            
             logger.info(f"Selected tools for LLM: {selected_tool_names}")
             
             response = await self._execute_loop(

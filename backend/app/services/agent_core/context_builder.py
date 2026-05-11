@@ -14,7 +14,6 @@ from app.services.prompt_service import PromptService
 from app.services.context_service import ContextService, CONTEXT_CONFIG
 from app.services.memory_service import MemoryService, MemoryContext
 from app.services.agent_tools import get_tool_definitions, get_registry
-from app.services.agent_core.intent_classifier import select_tools_for_message
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +139,27 @@ class ContextBuilder:
         if not user_message:
             return self._all_tool_defs
 
-        tool_names = select_tools_for_message(user_message)
+        # NEW: Hybrid routing - deterministic router first, then embeddings fallback
+        tool_names = None
+        
+        # Step 1: Try deterministic router (fast path <1ms)
+        from app.services.agent_core.tool_router import route as route_tools
+        router_tools = route_tools(user_message)
+        if router_tools:
+            tool_names = router_tools
+            logger.info(f"Router tools (fast path): {tool_names}")
+        
+        # Step 2: Fallback to embeddings if router returned None
+        if tool_names is None:
+            from app.services.tool_registry.registry import search_tools
+            results = search_tools(user_message, limit=15)
+            tool_names = [r["name"] for r in results if r["score"] >= 0.45]
+            logger.info(f"Embedding tools (fallback): {tool_names}")
+        
+        # Step 3: Empty list if nothing found
+        if tool_names is None:
+            tool_names = []
 
-        # 0 tools is valid for conversation-only messages — don't fallback
         if not tool_names:
             return []
 

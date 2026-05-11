@@ -129,27 +129,6 @@ ALWAYS_INCLUDE: Set[str] = {
     "model_switch",
 }
 
-INTENT_TO_TOOLS: Dict[str, Set[str]] = {
-    "file_operation": {"read_file", "write_file", "edit_file", "glob", "grep", "ls"},
-    "web_search": {"web_search", "web_fetch"},
-    "web_fetch": {"web_fetch", "scrape_and_store", "search_stored_content"},
-    "code_execution": {"bash", "git", "docker"},
-    "docker": {"docker"},
-    "git": {"git"},
-    "database": {"postgres_query_read", "postgres_query_write", "postgres_list_tables", "postgres_describe_table"},
-    # ── Granular NAS tool mapping ─────────────────────────────────
-    "nas_list_shares": {"nas_list_share"},
-    "nas_list_folder": {"nas_list_folder"},
-    "nas_find_file": {"nas_find_file"},
-    "nas_find_folder": {"nas_find_folder"},
-    "nas_search": {"nas_search"},
-    "telegram": {"telegram_send_message", "telegram_send_notification",
-                 "telegram_get_user_info", "telegram_bot_health"},
-    "note_taking": {"user_write_notes"},
-    "search_stored": {"search_stored_content", "qdrant_search", "qdrant_scroll"},
-    "conversation": set(),
-}
-
 INTENT_TO_PRIMARY_TOOL: Dict[str, Optional[str]] = {
     "calculator": "calculator",
     "weather": "weather",
@@ -271,27 +250,6 @@ def classify_intent(user_message: str) -> List[str]:
     return matched
 
 
-def select_tools(intents: List[str]) -> List[str]:
-    """Select tool names based on classified intents."""
-    tool_names: Set[str] = set()
-
-    for intent in intents:
-        tools = INTENT_TO_TOOLS.get(intent, set())
-        tool_names.update(tools)
-
-    non_conversation = [i for i in intents if i != "conversation"]
-    if non_conversation:
-        tool_names.update(ALWAYS_INCLUDE)
-
-    return list(tool_names)
-
-
-def select_tools_for_message(user_message: str) -> List[str]:
-    """One-shot: classify intent and select tools for a message."""
-    intents = classify_intent(user_message)
-    return select_tools(intents)
-
-
 def classify_message(user_message: str) -> Dict:
     """Full intent classification returning intent, tool, confidence, and complexity.
 
@@ -326,9 +284,6 @@ def classify_message(user_message: str) -> Dict:
     mapped_intent = primary_intent if primary_intent != "conversation" else "general_chat"
 
     primary_tool = INTENT_TO_PRIMARY_TOOL.get(primary_intent)
-    if primary_tool is None and intents:
-        tools = select_tools(intents)
-        primary_tool = tools[0] if tools else None
 
     confidence = 0.8 if primary_intent != "conversation" else 0.55
     complexity = min(len(intents) + 1, 5)

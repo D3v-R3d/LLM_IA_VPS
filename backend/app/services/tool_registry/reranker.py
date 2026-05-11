@@ -14,8 +14,8 @@ from typing import List, Set
 
 from rapidfuzz import fuzz
 
-VECTOR_WEIGHT = 0.50
-KEYWORD_WEIGHT = 0.35
+VECTOR_WEIGHT = 0.70
+KEYWORD_WEIGHT = 0.15
 FUZZY_WEIGHT = 0.15
 
 
