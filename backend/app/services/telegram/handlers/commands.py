@@ -336,15 +336,11 @@ async def handle_compress_command(update: TelegramUpdate, context: HandlerContex
 
 async def handle_nas_command(update: TelegramUpdate, context: HandlerContext) -> Optional[str]:
     """Handle /nas command - list shares on NAS."""
-    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+    from app.services.synology_service import SynologyService
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        auth.login()
-        nas = FileStation(client)
-
-        shares = nas.list_shares()
+        service = SynologyService.get_instance()
+        shares = service.list_shares()
         share_list = shares.get("data", {}).get("shares", [])
 
         if not share_list:
@@ -364,17 +360,13 @@ async def handle_nas_command(update: TelegramUpdate, context: HandlerContext) ->
 
 async def handle_ls_command(update: TelegramUpdate, context: HandlerContext) -> Optional[str]:
     """Handle /ls command - list files in a NAS folder."""
-    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+    from app.services.synology_service import SynologyService
 
     folder_path = update.text if update.text and update.text.startswith("/") else f"/{update.text or ''}"
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        auth.login()
-        nas = FileStation(client)
-
-        result = nas.list_folders(folder_path)
+        service = SynologyService.get_instance()
+        result = service.list_folder(folder_path)
         files = result.get("data", {}).get("files", [])
 
         if not files:
@@ -418,15 +410,14 @@ async def handle_ls_command(update: TelegramUpdate, context: HandlerContext) -> 
 
 async def handle_nas_login_command(update: TelegramUpdate, context: HandlerContext) -> Optional[str]:
     """Handle /naslogin command - connect to Synology NAS."""
-    from app.services.synology import SynologyClient, SynologyAuth
+    from app.services.synology_service import SynologyService
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        token = auth.login()
+        service = SynologyService.get_instance()
+        service.list_shares()
         await context.telegram_service.send_message(
             update.chat_id,
-            f"✓ Connecté au NAS Synology\nSID: {token[:20]}..."
+            f"✓ Connecté au NAS Synology"
         )
     except Exception as e:
         await context.telegram_service.send_message(update.chat_id, f"❌ Erreur de connexion: {str(e)}")

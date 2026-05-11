@@ -108,7 +108,7 @@ INTENT_TO_TOOLS: Dict[str, Set[str]] = {
     "docker": {"docker"},
     "git": {"git"},
     "database": {"postgres_query_read", "postgres_query_write", "postgres_list_tables", "postgres_describe_table"},
-    "nas": {"nas_list_share", "nas_list_folder", "nas_search"},
+    "nas": {"nas_list_share", "nas_list_folder", "nas_search", "nas_find_file", "nas_find_folder"},
     "telegram": {"telegram_send_message", "telegram_send_notification",
                  "telegram_get_user_info", "telegram_bot_health"},
     "note_taking": {"user_write_notes"},

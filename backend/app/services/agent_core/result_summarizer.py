@@ -56,6 +56,8 @@ class ResultSummarizer:
         "nas_list_share": "_list_summary",
         "nas_list_folder": "_list_summary",
         "nas_search": "_search_summary",
+        "nas_find_file": "_search_summary",
+        "nas_find_folder": "_search_summary",
 
         "model_switch": "_default_summary",
     }

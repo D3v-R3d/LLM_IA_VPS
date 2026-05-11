@@ -17,15 +17,18 @@ class FileStation:
     def _request(self, api: str, method: str, version: int, data: dict = None) -> dict:
         """
         Make authenticated request to FileStation API.
-        
+
         Args:
             api: API name (e.g., "SYNO.FileStation.List")
             method: Method name (e.g., "list")
             version: API version
             data: Additional parameters
-            
+
         Returns:
             API response dict
+
+        Raises:
+            SynologyApiError: if API returns an error code
         """
         params = {
             "api": api,
@@ -34,7 +37,12 @@ class FileStation:
         }
         if data:
             params.update(data)
-        return self.client.post(self.API_PATH, data=params)
+        result = self.client.post(self.API_PATH, data=params)
+        if result.get("success") is False:
+            error = result.get("error", {})
+            code = error.get("code", "unknown")
+            raise SynologyApiError(f"Synology API error {code} for {api}.{method}")
+        return result
 
     def list_shares(self) -> dict:
         """
@@ -137,27 +145,88 @@ class FileStation:
         keyword: str = None,
         filetype: str = "file",
         limit: int = 100,
+        recursive: bool = True,
     ) -> dict:
         """
         Search for files by name pattern.
-        
+
         Args:
             folder_path: Directory to search in
             keyword: Search string (supports wildcards)
             filetype: "file" or "dir"
             limit: Max results
-            
+            recursive: If True, search subfolders recursively
+
         Returns:
             Dict with matching files
         """
-        return self._request(
-            "SYNO.FileStation.Search",
-            "list",
-            3,
-            {
+        try:
+            return self._request(
+                "SYNO.FileStation.Search",
+                "list",
+                3,
+                {
+                    "folder_path": folder_path,
+                    "keyword": keyword or "",
+                    "filetype": filetype,
+                    "limit": limit,
+                    "recursive": recursive,
+                },
+            )
+        except SynologyApiError:
+            return self._recursive_search(folder_path, keyword, filetype, limit)
+
+    def _recursive_search(
+        self,
+        folder_path: str,
+        keyword: str,
+        filetype: str,
+        limit: int,
+        depth: int = 0,
+        max_depth: int = 5,
+    ) -> dict:
+        """Fallback: recursive search using list_folders when Search API is unavailable."""
+        results = []
+        keyword_lower = keyword.lower() if keyword else ""
+
+        try:
+            folders_result = self.list_folders(folder_path=folder_path, limit=500)
+            if not folders_result.get("success"):
+                return {"success": True, "data": {"files": [], "total": 0}}
+            files = folders_result.get("data", {}).get("files", [])
+        except Exception:
+            return {"success": True, "data": {"files": [], "total": 0}}
+
+        for f in files:
+            is_dir = f.get("isdir", False)
+            name = f.get("name", "")
+
+            if keyword_lower and keyword_lower in name.lower():
+                f["path"] = f.get("path") or f"{folder_path.rstrip('/')}/{name}"
+                results.append(f)
+            elif is_dir and depth < max_depth:
+                sub_path = f.get("path")
+                if sub_path:
+                    sub_results = self._recursive_search(
+                        sub_path, keyword, filetype, limit - len(results), depth + 1, max_depth
+                    )
+                    sub_files = sub_results.get("data", {}).get("files", [])
+                    results.extend(sub_files)
+
+            if not keyword_lower:
+                f["path"] = f.get("path") or f"{folder_path.rstrip('/')}/{name}"
+                results.append(f)
+
+            if len(results) >= limit:
+                break
+
+        return {
+            "success": True,
+            "data": {
+                "files": results[:limit],
+                "total": len(results),
                 "folder_path": folder_path,
-                "keyword": keyword or "",
-                "filetype": filetype,
-                "limit": limit,
+                "keyword": keyword,
             },
-        )
+            "_fallback": True,
+        }

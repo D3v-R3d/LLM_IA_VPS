@@ -58,7 +58,8 @@ class ToolRegistry:
         )
         from app.services.agent_tools.tools.memory import QdrantSearchTool
         from app.services.agent_tools.tools.nas import (
-            NasListShareTool, NasListFolderTool, NasSearchTool
+            NasListShareTool, NasListFolderTool, NasSearchTool,
+            NasFindFileTool, NasFindFolderTool
         )
 
         try:
@@ -96,6 +97,8 @@ class ToolRegistry:
             NasListShareTool(),
             NasListFolderTool(),
             NasSearchTool(),
+            NasFindFileTool(),
+            NasFindFolderTool(),
         ]
 
         if has_model_tool:

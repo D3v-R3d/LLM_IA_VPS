@@ -133,7 +133,7 @@ class CallbackQueryHandler(BaseHandler):
 
 async def _handle_ls_callback(data: str, chat_id: str, context: HandlerContext) -> Optional[str]:
     """Handle /ls callback from inline keyboard."""
-    from app.services.synology import SynologyClient, SynologyAuth, FileStation
+    from app.services.synology_service import SynologyService
     from app.services.telegram.handlers.commands import _format_size
 
     folder_path = data[3:].strip()
@@ -141,12 +141,8 @@ async def _handle_ls_callback(data: str, chat_id: str, context: HandlerContext) 
         folder_path = f"/{folder_path}"
 
     try:
-        client = SynologyClient()
-        auth = SynologyAuth(client)
-        auth.login()
-        nas = FileStation(client)
-
-        result = nas.list_folders(folder_path)
+        service = SynologyService.get_instance()
+        result = service.list_folder(folder_path)
         files = result.get("data", {}).get("files", [])
 
         if not files:
