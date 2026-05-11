@@ -6,6 +6,18 @@ Tool-level permissions and access control.
 
 from typing import Dict, List, Set, Optional
 
+TOOL_CATEGORIES = {
+    "read": {
+        "read_file",
+        "glob",
+        "ls",
+        "nas_search",
+        "nas_find_folder",
+        "postgres_query_read",
+        "qdrant_search"
+    }
+}
+
 
 class ToolPermissions:
     """
@@ -71,6 +83,11 @@ class ToolPermissions:
     def remove_from_allow(self, tool_name: str):
         """Remove a tool from global allow list."""
         self._global_allow.discard(tool_name)
+
+    def allow_category(self, category: str):
+        tools = self.TOOL_CATEGORIES.get(category, [])
+        for t in tools:
+            self._global_allow.add(t)
 
 
 # Global instance (singleton)

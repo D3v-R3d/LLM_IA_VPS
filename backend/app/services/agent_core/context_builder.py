@@ -139,25 +139,29 @@ class ContextBuilder:
         if not user_message:
             return self._all_tool_defs
 
-        # NEW: Hybrid routing - deterministic router first, then embeddings fallback
+        # NEW: Hybrid routing with ambiguity detection
+        router_result = None
         tool_names = None
         
         # Step 1: Try deterministic router (fast path <1ms)
         from app.services.agent_core.tool_router import route as route_tools
-        router_tools = route_tools(user_message)
-        if router_tools:
-            tool_names = router_tools
-            logger.info(f"Router tools (fast path): {tool_names}")
+        router_result = route_tools(user_message)
         
-        # Step 2: Fallback to embeddings if router returned None
-        if tool_names is None:
+        if router_result and router_result.get("tools"):
+            tool_names = router_result.get("tools", [])
+            logger.info(f"Router tools: {tool_names} "
+                       f"(ambiguous={router_result.get('is_ambiguous')}, "
+                       f"scopes={router_result.get('scope_candidates')})")
+        
+        # Step 2: Fallback to embeddings if router returned empty
+        if not tool_names:
             from app.services.tool_registry.registry import search_tools
             results = search_tools(user_message, limit=15)
             tool_names = [r["name"] for r in results if r["score"] >= 0.45]
             logger.info(f"Embedding tools (fallback): {tool_names}")
         
         # Step 3: Empty list if nothing found
-        if tool_names is None:
+        if not tool_names:
             tool_names = []
 
         if not tool_names:

@@ -189,26 +189,30 @@ class AgentOrchestrator:
 
             context = self._build_context(system_prompt, messages_history, user_message)
             
-            # NEW: Hybrid routing - deterministic router first, then embeddings fallback
+            # NEW: Hybrid routing with ambiguity detection
+            router_result = None
             selected_tool_names = None
             
             if user_message:
                 # Step 1: Try deterministic router (fast path <1ms)
                 from app.services.agent_core.tool_router import route as route_tools
-                router_tools = route_tools(user_message)
-                if router_tools:
-                    selected_tool_names = router_tools
-                    logger.info(f"Router tools (fast path): {selected_tool_names}")
+                router_result = route_tools(user_message)
+                
+                if router_result and router_result.get("tools"):
+                    selected_tool_names = router_result.get("tools", [])
+                    logger.info(f"Router tools: {selected_tool_names} "
+                               f"(ambiguous={router_result.get('is_ambiguous')}, "
+                               f"scopes={router_result.get('scope_candidates')})")
             
-            # Step 2: Fallback to embeddings if router returned None
-            if selected_tool_names is None and user_message:
+            # Step 2: Fallback to embeddings if router returned empty
+            if not selected_tool_names and user_message:
                 from app.services.tool_registry.registry import search_tools
                 results = search_tools(user_message, limit=15)
                 selected_tool_names = [r["name"] for r in results if r["score"] >= 0.45]
                 logger.info(f"Embedding tools (fallback): {selected_tool_names}")
             
             # Step 3: Empty list if nothing found
-            if selected_tool_names is None:
+            if not selected_tool_names:
                 selected_tool_names = []
             
             logger.info(f"Selected tools for LLM: {selected_tool_names}")
@@ -477,6 +481,15 @@ class AgentOrchestrator:
             tools_start = time.time()
             tool_results = await self._execute_with_idempotency(tool_calls, state, db_session=db_session)
             tools_ms = int((time.time() - tools_start) * 1000)
+            
+            # NEW: Apply result merger for ambiguous queries
+            if router_result and router_result.get("is_ambiguous"):
+                from app.services.agent_core.tool_executor import ResultMerger
+                original_count = len(tool_results)
+                tool_results = ResultMerger.merge_results(tool_results, router_result)
+                logger.info(f"ResultMerger: {original_count} → {len(tool_results)} results "
+                           f"(scope priority applied)")
+            
             logger.info(f"STEP {step}: TOOLS took {tools_ms}ms ({len(tool_results)} results)")
 
             for result in tool_results:
@@ -765,247 +778,249 @@ class AgentOrchestrator:
         direct_response: str,
         state: RunState
     ) -> str:
-       """Telegram-style natural synthesis."""
+        """Natural synthesis with improved visual layout."""
 
-       sections = []
+        DIVIDER = "─" * 28
 
-       # intro
-       if direct_response and direct_response.strip():
-           sections.append(
-               f"🤖 {direct_response.strip()}"
-           )
+        sections = []
+        errors = []
+        success_count = 0
 
-       if not tool_results and not direct_response:
-           return (
-               "⚠️ Je n’ai trouvé aucun résultat.\n\n"
-               "Réessaie avec une autre requête."
-           )
+        # ── Intro ────────────────────────────────────────────────────────────────
+        if direct_response and direct_response.strip():
+            sections.append(direct_response.strip())
 
-       for r in tool_results:
-           if not r:
-               continue
+        if not tool_results and not direct_response:
+            return (
+                "⚠️  Aucun résultat trouvé\n"
+                f"{DIVIDER}\n"
+                "Réessaie avec une autre requête."
+            )
 
-           tool = getattr(r, "tool", "unknown")
-           data = getattr(r, "data", None)
-           error = getattr(r, "error", None)
+        # ── Process tool results ──────────────────────────────────────────────────
+        for r in tool_results:
+            if not r:
+                continue
 
-           # ---------------- errors
-           if error:
-               sections.append(
-                   f"⚠️ Petit souci avec **{tool}**\n\n"
-                   f"`{error}`"
-               )
-               continue
+            tool  = getattr(r, "tool",  "unknown")
+            data  = getattr(r, "data",  None)
+            error = getattr(r, "error", None)
 
-           if not r.success or not data:
-               continue
+            # ── Errors (collected, shown at the end) ─────────────────────────────
+            if error:
+                errors.append(f"• {tool}: `{error}`")
+                continue
 
-           # ---------- docker
-           if "docker" in tool and isinstance(data, dict):
-               output = data.get("output", data.get("stdout", ""))
-               if not output and isinstance(data, list):
-                   output = "\n".join(str(item) for item in data[:20])
-               if not output:
-                   output = str(data)[:500]
-               truncated = output[:1500] + ("..." if len(output) > 1500 else "")
-               sections.append(
-                   f"🐳 Docker\n\n"
-                   f"```\n{truncated}\n```"
-               )
-           # ---------- web response
-           elif isinstance(data, dict) and "response" in data:
-               sections.append(
-                   f"🌐 Résultat web récupéré\n\n"
-                   f"{data['response']}"
-               )
+            if not r.success or not data:
+                continue
 
-           # ---------- web search results
-           elif isinstance(data, dict) and "results" in data:
-               results_list = data.get("results", [])
-               if results_list:
-                   lines = []
-                   for r in results_list[:10]:
-                       title = r.get("title", "No title")
-                       url = r.get("url", "")
-                       snippet = r.get("snippet", "")[:150]
-                       lines.append(f"• **{title}**\n  {snippet}")
-                       if url:
-                           lines.append(f"  🔗 {url}")
-                   sections.append(
-                       f"🔍 Recherche: **{data.get('query', '')}**\n\n"
-                       + "\n\n".join(lines)
-                   )
+            success_count += 1
 
-           # ---------- sql rows
-           elif isinstance(data, dict) and "rows" in data:
-               rows = "\n".join(f"• {row}" for row in data["rows"])
+            # ── Docker ────────────────────────────────────────────────────────────
+            if "docker" in tool and isinstance(data, dict):
+                output = data.get("output") or data.get("stdout") or ""
+                if not output and isinstance(data, list):
+                    output = "\n".join(str(i) for i in data[:20])
+                output = output or str(data)[:500]
+                truncated = output[:1500] + ("\n…  [sortie tronquée]" if len(output) > 1500 else "")
+                sections.append(
+                    f"🐳  Docker\n"
+                    f"{DIVIDER}\n"
+                    f"```\n{truncated}\n```"
+                )
 
-               sections.append(
-                   f"🗄️ Requête SQL exécutée\n\n"
-                   f"Voici les résultats trouvés 👇\n\n"
-                   f"{rows}"
-               )
+            # ── Web fetch ─────────────────────────────────────────────────────────
+            elif isinstance(data, dict) and "response" in data:
+                sections.append(
+                    f"🌐  Résultat web\n"
+                    f"{DIVIDER}\n"
+                    f"{data['response']}"
+                )
 
-           # ---------- tables
-           elif isinstance(data, dict) and "tables" in data:
-               tables = "\n".join(
-                   f"• {t.get('schema','public')}.{t.get('name')}"
-                   for t in data["tables"]
-               )
+            # ── Web search ────────────────────────────────────────────────────────
+            elif isinstance(data, dict) and "results" in data:
+                results_list = data.get("results", [])
+                query = data.get("query", "")
+                lines = []
+                for item in results_list[:10]:
+                    title   = item.get("title", "Sans titre")
+                    url     = item.get("url", "")
+                    snippet = item.get("snippet", "")[:160].rstrip()
+                    if snippet and not snippet.endswith((".", "…")):
+                        snippet += "…"
+                    lines.append(f"  {title}\n  {snippet}")
+                    if url:
+                        lines.append(f"  🔗 {url}")
+                header = f'🔍  Recherche — "{query}"  ({len(results_list)} résultat{"s" if len(results_list) > 1 else ""})'
+                sections.append(
+                    f"{header}\n"
+                    f"{DIVIDER}\n"
+                    + "\n\n".join(lines)
+                )
 
-               sections.append(
-                   f"🗂️ Tables détectées\n\n"
-                   f"J’ai trouvé **{len(data['tables'])}** tables :\n\n"
-                   f"{tables}"
-               )
+            # ── SQL rows ──────────────────────────────────────────────────────────
+            elif isinstance(data, dict) and "rows" in data:
+                rows     = data["rows"]
+                count    = len(rows)
+                col_keys = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
 
-           # ---------- columns
-           elif isinstance(data, dict) and "columns" in data:
-               cols = "\n".join(
-                   f"• {c['name']} ({c['type']})"
-                   for c in data["columns"]
-               )
+                if col_keys:
+                    # Build aligned table
+                    col_widths = {k: max(len(k), max(len(str(r.get(k, ""))) for r in rows[:50])) for k in col_keys}
+                    header_row = "  " + " │ ".join(k.ljust(col_widths[k]) for k in col_keys)
+                    sep_row    = "  " + "─┼─".join("─" * col_widths[k] for k in col_keys)
+                    data_rows  = [
+                        "  " + " │ ".join(str(row.get(k, "")).ljust(col_widths[k]) for k in col_keys)
+                        for row in rows[:50]
+                    ]
+                    table = "\n".join([header_row, sep_row] + data_rows)
+                    if count > 50:
+                        table += f"\n  … {count - 50} ligne(s) supplémentaire(s)"
+                else:
+                    table = "\n".join(f"  • {row}" for row in rows[:50])
 
-               sections.append(
-                   f"📋 Structure de table\n\n"
-                   f"Colonnes de `{data.get('table', tool)}` :\n\n"
-                   f"{cols}"
-               )
+                sections.append(
+                    f"🗄️  Résultat SQL  —  {count} ligne{'s' if count > 1 else ''}\n"
+                    f"{DIVIDER}\n"
+                    f"```\n{table}\n```"
+                )
 
-           # ---------- files (including nested in data like NAS results)
-           elif isinstance(data, dict) and (
-               "files" in data or 
-               "shares" in data or
-               ("files" in (data.get("data") or {}) or "shares" in (data.get("data") or {}))
-           ):
-               file_list = data.get("files") or data.get("shares") or data.get("data", {}).get("files") or data.get("data", {}).get("shares") or []
-               total_count = len(file_list)
-               if not total_count:
-                   total_count = data.get("data", {}).get("total", 0)
-               if not file_list:
-                   # Check if this is a NAS result with empty files
-                   if "data" in data and ("files" in data.get("data", {}) or "shares" in data.get("data", {})):
-                       sections.append(f"📂 Recherche NAS\n\nAucun fichier trouvé.")
-                   else:
-                       sections.append(f"📂 Recherche NAS\n\nAucun résultat trouvé pour cette recherche.")
-                   continue
-               lines_out = []
-               for f in file_list[:20]:
-                   if isinstance(f, dict):
-                       name = f.get("name", "?")
-                       path = f.get("path", "")
-                       is_dir = f.get("isdir", False)
-                       icon = "📁" if is_dir else "📄"
-                       path_short = path if len(path) < 45 else "..." + path[-42:]
-                       lines_out.append(f"{icon} **{name}**\n   └─ `{path_short}`")
-                   else:
-                       lines_out.append(f"📄 {f}")
-               if total_count > 20:
-                   lines_out.append(f"\n   ... et **{total_count - 20}** autres fichiers")
-               sections.append(
-                   f"📂 Fichiers trouvés\n\n"
-                   f"J'ai trouvé **{total_count}** fichier(s) 👇\n\n"
-                   + "\n".join(lines_out)
-               )
+            # ── Tables list ───────────────────────────────────────────────────────
+            elif isinstance(data, dict) and "tables" in data:
+                tables = data["tables"]
+                lines  = [
+                    f"  • {t.get('schema', 'public')}.{t.get('name')}"
+                    for t in tables
+                ]
+                sections.append(
+                    f"🗂️  Tables  —  {len(tables)} trouvée{'s' if len(tables) > 1 else ''}\n"
+                    f"{DIVIDER}\n"
+                    + "\n".join(lines)
+                )
 
-           # ---------- generic dict fallback (prevents raw dict display)
-           elif isinstance(data, dict):
-               lines = [f"• **{k}**: {str(v)[:100]}" for k, v in list(data.items())[:10]]
-               sections.append(
-                   f"🔧 Résultat de `{tool}`\n\n"
-                   + "\n".join(lines)
-               )
+            # ── Columns ───────────────────────────────────────────────────────────
+            elif isinstance(data, dict) and "columns" in data:
+                cols  = data["columns"]
+                name_w = max((len(c["name"]) for c in cols), default=4)
+                lines  = [
+                    f"  {c['name'].ljust(name_w)}  {c['type']}"
+                    for c in cols
+                ]
+                sections.append(
+                    f"📋  Colonnes de `{data.get('table', tool)}`\n"
+                    f"{DIVIDER}\n"
+                    f"```\n" + "\n".join(lines) + "\n```"
+                )
 
-           # ---------- file content
-           elif tool == "read_file":
-               content_short = data[:1000] + "..." if len(str(data)) > 1000 else data
-               sections.append(
-                   f"📄 Contenu du fichier\n\n"
-                   f"Voilà ce que j'ai lu 👇\n\n"
-                   f"```text\n{content_short}\n```"
-               )
+            # ── Files / NAS shares ────────────────────────────────────────────────
+            elif isinstance(data, dict) and (
+                "files" in data or "shares" in data
+                or "files" in (data.get("data") or {})
+                or "shares" in (data.get("data") or {})
+            ):
+                inner     = data.get("data") or data
+                file_list = inner.get("files") or inner.get("shares") or []
+                total     = inner.get("total", len(file_list))
 
-           # ---------- docker
-           elif "docker" in tool:
-               data_short = data[:2000] + "..." if len(str(data)) > 2000 else data
-               sections.append(
-                   f"🐳 Docker\n\n"
-                   f"Commande exécutée avec succès.\n\n"
-                   f"```text\n{data_short}\n```"
-               )
+                if not file_list:
+                    sections.append(f"📂  Fichiers\n{DIVIDER}\nAucun fichier trouvé.")
+                    continue
 
-           # ---------- bash
-           elif tool == "bash":
-               data_short = data[:2000] + "..." if len(str(data)) > 2000 else data
-               sections.append(
-                   f"💻 Terminal\n\n"
-                   f"Résultat :\n\n"
-                   f"```text\n{data_short}\n```"
-               )
+                lines = []
+                for f in file_list[:20]:
+                    if isinstance(f, dict):
+                        name  = f.get("name", "?")
+                        path  = f.get("path", "")
+                        icon  = "📁" if f.get("isdir") else "📄"
+                        short = ("…" + path[-40:]) if len(path) > 43 else path
+                        lines.append(f"  {icon} {name}\n     {short}")
+                    else:
+                        lines.append(f"  📄 {f}")
 
-           # ---------- nas shares
-           elif isinstance(data, dict) and "shares" in data.get("data", {}):
-               share_list = data["data"]["shares"]
-               lines_out = []
-               for s in share_list:
-                   name = s.get("name", "?")
-                   path = s.get("path", "")
-                   lines_out.append(f"💾 **{name}**\n   └─ `{path}`")
-               sections.append(
-                   f"💾 Stockage NAS\n\n"
-                   f"Partages disponibles ({len(share_list)}) 👇\n\n"
-                   + "\n".join(lines_out)
-               )
+                footer = f"\n  … et {total - 20} autre(s)" if total > 20 else ""
+                sections.append(
+                    f"📂  Fichiers  —  {total} élément{'s' if total > 1 else ''}\n"
+                    f"{DIVIDER}\n"
+                    + "\n\n".join(lines)
+                    + footer
+                )
 
-           # ---------- nas search results
-           elif isinstance(data, dict) and data.get("_fallback"):
-               inner_data = data.get("data", {})
-               files = inner_data.get("files", [])
-               folder_path = inner_data.get("folder_path", data.get("folder_path", "/"))
-               keyword = inner_data.get("keyword", data.get("keyword", ""))
-               count = inner_data.get("total", data.get("total", len(files)))
-               lines_out = []
-               for f in files[:20]:
-                   if isinstance(f, dict):
-                       name = f.get("name", "?")
-                       path = f.get("path", "")
-                       is_dir = f.get("isdir", False)
-                       icon = "📁" if is_dir else "📄"
-                       lines_out.append(f"{icon} **{name}**\n   └─ `{path}`")
-               if count > 20:
-                   lines_out.append(f"\n   ... et **{count - 20}** autres résultats")
-               search_info = f"🔍 Recherche: **{keyword}** dans `{folder_path}`"
-               sections.append(
-                   f"📂 Résultats NAS\n\n"
-                   f"{search_info}\n\n"
-                   f"J'ai trouvé **{count}** résultat(s) 👇\n\n"
-                   + "\n".join(lines_out)
-               )
+            # ── NAS search (fallback path) ─────────────────────────────────────────
+            elif isinstance(data, dict) and data.get("_fallback"):
+                inner  = data.get("data", {})
+                files  = inner.get("files", [])
+                folder = inner.get("folder_path", data.get("folder_path", "/"))
+                kw     = inner.get("keyword", data.get("keyword", ""))
+                count  = inner.get("total", data.get("total", len(files)))
+                lines  = []
+                for f in files[:20]:
+                    if isinstance(f, dict):
+                        icon  = "📁" if f.get("isdir") else "📄"
+                        short = ("…" + f.get("path", "")[-40:]) if len(f.get("path", "")) > 43 else f.get("path", "")
+                        lines.append(f"  {icon} {f.get('name', '?')}\n     {short}")
+                if count > 20:
+                    lines.append(f"\n  … et {count - 20} autre(s)")
+                sections.append(
+                    f'📂  NAS — "{kw}" dans `{folder}`  —  {count} résultat{"s" if count > 1 else ""}\n'
+                    f"{DIVIDER}\n"
+                    + "\n\n".join(lines)
+                )
 
-           elif isinstance(data, dict):
-               pretty = "\n".join(
-                   f"• {k}: {v}"
-                   for k, v in data.items()
-               )
+            # ── File content ──────────────────────────────────────────────────────
+            elif tool == "read_file":
+                content = str(data)
+                short   = content[:1200] + "\n…  [fichier tronqué]" if len(content) > 1200 else content
+                sections.append(
+                    f"📄  Fichier lu\n"
+                    f"{DIVIDER}\n"
+                    f"```text\n{short}\n```"
+                )
 
-               sections.append(
-                   f"🔧 Résultat de `{tool}`\n\n"
-                   f"{pretty}"
-               )
+            # ── Bash ──────────────────────────────────────────────────────────────
+            elif tool == "bash":
+                short = str(data)[:2000] + "\n…" if len(str(data)) > 2000 else str(data)
+                sections.append(
+                    f"💻  Terminal\n"
+                    f"{DIVIDER}\n"
+                    f"```\n{short}\n```"
+                )
 
-           # ---------- fallback
-           else:
-               sections.append(
-                   f"📌 Résultat\n\n"
-                   f"{data}"
-               )
+            # ── Generic dict ──────────────────────────────────────────────────────
+            elif isinstance(data, dict):
+                lines = [f"  {k}: {str(v)[:120]}" for k, v in list(data.items())[:12]]
+                sections.append(
+                    f"🔧  `{tool}`\n"
+                    f"{DIVIDER}\n"
+                    + "\n".join(lines)
+                )
 
-       final_status = (
-           "\n\n━━━━━━━━━━━━━━\n"
-           "✅ Terminé avec succès"
-       )
+            # ── Fallback ──────────────────────────────────────────────────────────
+            else:
+                short = str(data)[:1500] + "\n…" if len(str(data)) > 1500 else str(data)
+                sections.append(
+                    f"📌  `{tool}`\n"
+                    f"{DIVIDER}\n"
+                    f"{short}"
+                )
 
-       return "\n\n".join(sections) + final_status
+        # ── Errors block (shown once, at the end) ────────────────────────────────
+        if errors:
+            sections.append(
+                f"⚠️  Erreur{'s' if len(errors) > 1 else ''}\n"
+                f"{DIVIDER}\n"
+                + "\n".join(errors)
+            )
+
+        # ── Footer ───────────────────────────────────────────────────────────────
+        if errors and not success_count:
+            footer = f"\n{DIVIDER}\n❌  Échec  ({len(errors)} erreur{'s' if len(errors) > 1 else ''})"
+        elif errors:
+            footer = f"\n{DIVIDER}\n⚠️  Terminé avec {len(errors)} erreur{'s' if len(errors) > 1 else ''}"
+        else:
+            footer = f"\n{DIVIDER}\n✅  Terminé"
+
+        sep = f"\n\n{'━' * 28}\n\n"
+        return sep.join(sections) + footer
     # ═══════════════════════════════════════════════════════════════════════
     # LLM CALL V2 - OPTIMIZED
     # ═══════════════════════════════════════════════════════════════════════

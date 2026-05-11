@@ -201,3 +201,88 @@ class ToolExecutor:
             else:
                 fixed[k] = v
         return await self.registry.execute(tool_name, **fixed)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# RESULT MERGER - Deterministic merging for ambiguous queries
+# ═══════════════════════════════════════════════════════════════════════
+
+# Scope priority: local_fs > nas > vector > postgres > web > others
+SCOPE_PRIORITY = ["local_fs", "nas", "vector", "postgres", "web", "telegram", "docker", "system", "memory", "api", "database"]
+
+# Tool → Scope mapping (same as tool_router.py)
+TOOL_TO_SCOPE = {
+    "glob": "local_fs", "ls": "local_fs", "find": "local_fs", "read_file": "local_fs", "grep": "local_fs",
+    "write_file": "local_fs", "edit_file": "local_fs",
+    "nas_find_folder": "nas", "nas_find_file": "nas", "nas_search": "nas", "nas_list_folder": "nas", "nas_list_share": "nas",
+    "qdrant_search": "vector", "search_stored_content": "vector", "scrape_and_store": "vector",
+    "postgres_query_read": "postgres", "postgres_query_write": "postgres", "postgres_list_tables": "postgres", "postgres_describe_table": "postgres",
+    "telegram_send_message": "telegram", "telegram_send_notification": "telegram", "telegram_get_user_info": "telegram", "telegram_bot_health": "telegram",
+    "web_search": "web", "web_fetch": "web", "api_call": "web",
+    "docker": "docker",
+    "bash": "system", "pkill": "system", "git": "system",
+    "user_write_notes": "memory",
+}
+
+
+def get_tool_scope(tool_name: str) -> Optional[str]:
+    """Get the scope for a given tool name."""
+    return TOOL_TO_SCOPE.get(tool_name)
+
+
+class ResultMerger:
+    """
+    Deterministic result merging for ambiguous queries.
+    
+    Priority: local_fs > nas > vector (weighted, not strict)
+    - If local_fs has success results → return local_fs
+    - Elif nas has success results → return nas
+    - Else → return vector
+    """
+    
+    @staticmethod
+    def merge_results(
+        tool_results: List[ToolResponse],
+        router_metadata: Optional[Dict] = None
+    ) -> List[ToolResponse]:
+        """
+        Merge results with scope-based priority.
+        
+        Rules:
+        1. Group by scope
+        2. Return highest-priority non-empty scope
+        3. Include all results from that scope
+        
+        Args:
+            tool_results: List of tool execution results
+            router_metadata: Router result dict with scope_candidates
+        
+        Returns:
+            Filtered list of results from highest-priority scope with results
+        """
+        if not tool_results:
+            return []
+        
+        # Group results by scope
+        from collections import defaultdict
+        scope_results = defaultdict(list)
+        
+        for result in tool_results:
+            if result.success:
+                scope = get_tool_scope(result.tool)
+                if scope:
+                    scope_results[scope].append(result)
+        
+        # If not ambiguous, return all results as-is
+        if not router_metadata or not router_metadata.get("is_ambiguous"):
+            return tool_results
+        
+        # Return highest-priority non-empty scope
+        for scope in SCOPE_PRIORITY:
+            if scope_results.get(scope):
+                logger.info(f"ResultMerger: selected scope '{scope}' ({len(scope_results[scope])} results)")
+                return scope_results[scope]
+        
+        # All scopes empty → return all results (let LLM explain)
+        logger.info(f"ResultMerger: all scopes empty, returning all {len(tool_results)} results")
+        return tool_results
