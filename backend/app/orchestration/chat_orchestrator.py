@@ -8,7 +8,7 @@ Handles session resolution, context building, agent execution, and response savi
 import asyncio
 import logging
 import os
-import time
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -114,13 +114,6 @@ class ChatOrchestrator:
                     payload={"session_id": getattr(session, 'id', None), "conversation_id": str(conversation.id) if conversation else None},
                 )
 
-            if event_logger and run_id:
-                event_logger.emit(
-                    event_type=EventType.AGENT_START,
-                    event_name="agent_start",
-                    payload={"model": prefs.get("model"), "provider": prefs.get("provider"), "message_preview": text[:100]},
-                )
-
             should_compress = conversation and len(conversation.messages) > 30
             if should_compress:
                 await self._telegram.send_chat_action(chat_id, "typing")
@@ -166,24 +159,6 @@ class ChatOrchestrator:
                 run_id=run_id,
             )
 
-            logger.info(f"Synthesis check - provider: {prefs.get('provider')}, model: {prefs.get('model')}, response_len: {len(response)}")
-            synthesis_start = time.time()
-            if prefs.get("provider") or prefs.get("model"):
-                logger.info("Calling synthesize response...")
-                response = await self._synthesize_response(
-                    response, prefs.get("provider"), prefs.get("model"), event_logger=event_logger
-                )
-                logger.info(f"Synthesis result len: {len(response)}")
-
-            if event_logger and run_id:
-                synthesis_duration = int((time.time() - synthesis_start) * 1000)
-                event_logger.emit(
-                    event_type=EventType.SYNTHESIS,
-                    event_name="synthesis",
-                    payload={"input_length": len(response), "output_length": len(response), "synthesis_model": prefs.get("model")},
-                    duration_ms=synthesis_duration,
-                )
-
             self._message.create(
                 db=db,
                 user_id=user.id,
@@ -195,13 +170,6 @@ class ChatOrchestrator:
             )
 
             self._conversation.update_timestamp(db, conversation.id)
-
-            if event_logger and run_id:
-                event_logger.emit(
-                    event_type=EventType.AGENT_END,
-                    event_name="agent_end",
-                    payload={"success": True, "final_response_length": len(response)},
-                )
 
             return response
 
@@ -217,95 +185,6 @@ class ChatOrchestrator:
             return "I'm thinking... Please try again in a moment."
         finally:
             db.close()
-
-    async def _synthesize_response(
-        self,
-        response: str,
-        provider_name: Optional[str] = None,
-        model: Optional[str] = None,
-        event_logger=None,
-    ) -> str:
-        """Synthesize response using LLM for natural language."""
-        if not response or len(response) < 20:
-            return response
-
-        from app.services.llm.provider_factory import provider_factory
-        from app.core.config import settings
-
-        provider = provider_name or settings.LLM_PROVIDER
-        llm_provider = provider_factory.get_provider(provider)
-
-        synthesis_system = self._load_synthesis_prompt()
-        logger.info(f"Loaded synthesis prompt length: {len(synthesis_system)}")
-
-        synthesis_prompt = [
-            {"role": "system", "content": synthesis_system},
-            {"role": "user", "content": f"Réponse à synthétiser:\n{response}"}
-        ]
-
-        if event_logger:
-            event_logger.emit_llm_request(
-                model=model or "default",
-                provider=provider,
-                prompt_length=len(synthesis_system) + len(response),
-                tools_count=0,
-            )
-
-        try:
-            if provider == "openrouter":
-                llm_response = await llm_provider.chat(
-                    model=model or "openai/gpt-oss-120b:free",
-                    messages=synthesis_prompt,
-                    options={"max_tokens": 5000}
-                )
-            else:
-                llm_response = await llm_provider.chat(
-                    model=model or "gemma4:31b",
-                    messages=synthesis_prompt,
-                    options={"max_tokens": 2000}
-                )
-
-            content = llm_response.get("content") if isinstance(llm_response, dict) else str(llm_response) if llm_response else ""
-
-            if event_logger:
-                event_logger.emit_llm_response(
-                    model=model or "default",
-                    provider=provider,
-                    tokens_in=0,
-                    tokens_out=0,
-                    duration_ms=0,
-                    response_preview=content[:500] if content else None,
-                )
-
-            if content:
-                return content
-        except Exception as e:
-            logger.warning(f"Synthesis failed: {e}")
-            if event_logger:
-                event_logger.emit_error(
-                    error_type="SynthesisError",
-                    error_message=str(e),
-                )
-
-        return response
-
-    def _load_synthesis_prompt(self) -> str:
-        """Load synthesis prompt from file."""
-        prompt_dir = os.environ.get("PROMPT_DIR", "/home/projects/tower_project")
-        prompt_file = os.path.join(prompt_dir, "inject", "synthesis.md")
-
-        try:
-            if os.path.exists(prompt_file):
-                with open(prompt_file, "r", encoding="utf-8") as f:
-                    return f.read()
-        except Exception as e:
-            logger.warning(f"Could not load synthesis prompt: {e}")
-
-        return (
-            "Tu es un assistant expert en communication. "
-            "Synthétise les résultats des outils en une réponse claire, concise et naturelle en français. "
-            "Conserve les mêmes faits et chiffres, reformule de manière naturelle."
-        )
 
     async def _resolve_session(self, db, user, chat_id: str):
         """Resolve or create a session for the user."""

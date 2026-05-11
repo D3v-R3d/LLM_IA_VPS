@@ -154,34 +154,59 @@ class AgentOrchestrator:
             except Exception:
                 pass
 
-        intent_result = self.intent_classification(user_message)
-        complexity = intent_result["complexity"]
+        if event_logger and run_id:
+            event_logger.emit(
+                event_type=EventType.AGENT_START,
+                event_name="agent_start",
+                payload={"model": model, "provider": provider_name, "message_preview": user_message[:100]},
+            )
 
-        logger.debug(f"Intent: {intent_result['intent']}, complexity: {complexity}")
+        try:
+            intent_result = self.intent_classification(user_message)
+            complexity = intent_result["complexity"]
 
-        plan = await self.plan(user_message, complexity, event_logger=event_logger)
-        if plan:
-            state.plan = plan
-            logger.debug(f"Plan: {len(plan.steps)} steps, tools: {plan.expected_tools}")
+            logger.debug(f"Intent: {intent_result['intent']}, complexity: {complexity}")
 
-        context = self._build_context(system_prompt, messages_history, user_message)
-        response = await self._execute_loop(
-            context=context,
-            model=model,
-            provider_name=provider_name,
-            state=state,
-            db_session=db_session
-        )
+            plan = await self.plan(user_message, complexity, event_logger=event_logger)
+            if plan:
+                state.plan = plan
+                logger.debug(f"Plan: {len(plan.steps)} steps, tools: {plan.expected_tools}")
 
-        final_response = await self.synthesize(
-            response.get("tool_results", []),
-            response.get("direct_response", ""),
-            state
-        )
+            context = self._build_context(system_prompt, messages_history, user_message)
+            response = await self._execute_loop(
+                context=context,
+                model=model,
+                provider_name=provider_name,
+                state=state,
+                db_session=db_session
+            )
 
-        await self._store_interaction(user_id, user_message, final_response, state)
+            final_response = await self.synthesize(
+                response.get("tool_results", []),
+                response.get("direct_response", ""),
+                state
+            )
 
-        return final_response
+            await self._store_interaction(user_id, user_message, final_response, state)
+
+            if event_logger and run_id:
+                event_logger.emit(
+                    event_type=EventType.AGENT_END,
+                    event_name="agent_end",
+                    payload={"success": True, "final_response_length": len(final_response)},
+                )
+
+            return final_response
+
+        except Exception as e:
+            logger.exception(f"AgentOrchestrator error: {e}")
+            if event_logger and run_id:
+                event_logger.emit(
+                    event_type=EventType.AGENT_END,
+                    event_name="agent_end",
+                    payload={"success": False, "error": str(e)[:200]},
+                )
+            raise
 
     # ═══════════════════════════════════════════════════════════════════════
     # INTENT CLASSIFICATION
@@ -745,52 +770,93 @@ class AgentOrchestrator:
 
            # ---------- files
            elif isinstance(data, dict) and "files" in data:
-               files = "\n".join(f"• {f}" for f in data["files"])
-
+               file_list = data.get("files", data.get("data", {}).get("files", []))
+               count = len(file_list)
+               lines_out = []
+               for f in file_list[:20]:
+                   if isinstance(f, dict):
+                       name = f.get("name", "?")
+                       path = f.get("path", "")
+                       is_dir = f.get("isdir", False)
+                       icon = "📁" if is_dir else "📄"
+                       path_short = path if len(path) < 45 else "..." + path[-42:]
+                       lines_out.append(f"{icon} **{name}**\n   └─ `{path_short}`")
+                   else:
+                       lines_out.append(f"📄 {f}")
+               if count > 20:
+                   lines_out.append(f"\n   ... et **{count - 20}** autres fichiers")
                sections.append(
                    f"📂 Fichiers trouvés\n\n"
-                   f"J’ai trouvé **{len(data['files'])}** fichiers :\n\n"
-                   f"{files}"
+                   f"J'ai trouvé **{count}** fichier(s) 👇\n\n"
+                   + "\n".join(lines_out)
                )
 
            # ---------- file content
            elif tool == "read_file":
+               content_short = data[:1000] + "..." if len(str(data)) > 1000 else data
                sections.append(
                    f"📄 Contenu du fichier\n\n"
-                   f"Voilà ce que j’ai lu 👇\n\n"
-                   f"```text\n{data}\n```"
+                   f"Voilà ce que j'ai lu 👇\n\n"
+                   f"```text\n{content_short}\n```"
                )
 
            # ---------- docker
            elif "docker" in tool:
+               data_short = data[:2000] + "..." if len(str(data)) > 2000 else data
                sections.append(
                    f"🐳 Docker\n\n"
                    f"Commande exécutée avec succès.\n\n"
-                   f"```text\n{data}\n```"
+                   f"```text\n{data_short}\n```"
                )
 
            # ---------- bash
            elif tool == "bash":
+               data_short = data[:2000] + "..." if len(str(data)) > 2000 else data
                sections.append(
-                   f"💻 Commande terminal\n\n"
+                   f"💻 Terminal\n\n"
                    f"Résultat :\n\n"
-                   f"```text\n{data}\n```"
+                   f"```text\n{data_short}\n```"
                )
 
-           # ---------- nas
-           elif isinstance(data, dict) and "shares" in data:
-               shares = "\n".join(
-                   f"• {s.get('name','unknown')}"
-                   for s in data["shares"]
-               )
-
+           # ---------- nas shares
+           elif isinstance(data, dict) and "shares" in data.get("data", {}):
+               share_list = data["data"]["shares"]
+               lines_out = []
+               for s in share_list:
+                   name = s.get("name", "?")
+                   path = s.get("path", "")
+                   lines_out.append(f"💾 **{name}**\n   └─ `{path}`")
                sections.append(
-                   f"💾 NAS\n\n"
-                   f"Partages disponibles :\n\n"
-                   f"{shares}"
+                   f"💾 Stockage NAS\n\n"
+                   f"Partages disponibles ({len(share_list)}) 👇\n\n"
+                   + "\n".join(lines_out)
                )
 
-           # ---------- fallback dict
+           # ---------- nas search results
+           elif isinstance(data, dict) and data.get("_fallback"):
+               inner_data = data.get("data", {})
+               files = inner_data.get("files", [])
+               folder_path = inner_data.get("folder_path", data.get("folder_path", "/"))
+               keyword = inner_data.get("keyword", data.get("keyword", ""))
+               count = inner_data.get("total", data.get("total", len(files)))
+               lines_out = []
+               for f in files[:20]:
+                   if isinstance(f, dict):
+                       name = f.get("name", "?")
+                       path = f.get("path", "")
+                       is_dir = f.get("isdir", False)
+                       icon = "📁" if is_dir else "📄"
+                       lines_out.append(f"{icon} **{name}**\n   └─ `{path}`")
+               if count > 20:
+                   lines_out.append(f"\n   ... et **{count - 20}** autres résultats")
+               search_info = f"🔍 Recherche: **{keyword}** dans `{folder_path}`"
+               sections.append(
+                   f"📂 Résultats NAS\n\n"
+                   f"{search_info}\n\n"
+                   f"J'ai trouvé **{count}** résultat(s) 👇\n\n"
+                   + "\n".join(lines_out)
+               )
+
            elif isinstance(data, dict):
                pretty = "\n".join(
                    f"• {k}: {v}"
