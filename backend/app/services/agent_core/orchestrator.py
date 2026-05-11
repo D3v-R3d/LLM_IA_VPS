@@ -23,9 +23,23 @@ from typing import Dict, List, Optional, Set, Any
 
 from app.services.agent_core.models import Decision, Plan, RunState, detect_loop_v2, generate_call_key
 from app.observability.event_logger import EventLogger
-from app.observability.event_types import EventType
+from app.observability.event_types import EventType, EventLevel
 
 logger = logging.getLogger(__name__)
+
+SPLIT_PATTERN = re.compile(
+    r"\b(?:and|then|after|ensuite|puis|plus)\b",
+    re.I
+)
+
+TOOL_PATTERNS = [
+    (["list", "directory", "folder"], ("List directory contents", "ls")),
+    (["read", "file"], ("Read file content", "read_file")),
+    (["write", "create"], ("Write to file", "write_file")),
+    (["search", "find"], ("Search for content", "grep")),
+    (["docker"], ("Docker operation", "docker")),
+    (["bash", "command", "execute"], ("Execute command", "bash")),
+]
 
 NO_RETRY_TOOLS: Set[str] = {"write_file", "docker_run", "docker_exec", "http_request", "postgres_insert", "postgres_update", "postgres_delete"}
 
@@ -133,12 +147,19 @@ class AgentOrchestrator:
         state = RunState()
         state.run_id = run_id
 
+        event_logger = None
+        if db_session and run_id:
+            try:
+                event_logger = EventLogger(db=db_session, run_id=run_id, chat_id=None)
+            except Exception:
+                pass
+
         intent_result = self.intent_classification(user_message)
         complexity = intent_result["complexity"]
 
         logger.debug(f"Intent: {intent_result['intent']}, complexity: {complexity}")
 
-        plan = await self.plan(user_message, complexity)
+        plan = await self.plan(user_message, complexity, event_logger=event_logger)
         if plan:
             state.plan = plan
             logger.debug(f"Plan: {len(plan.steps)} steps, tools: {plan.expected_tools}")
@@ -170,26 +191,109 @@ class AgentOrchestrator:
         from app.services.agent_core.intent_classifier import classify_message
         return classify_message(message)
 
-    # _pack removed — logic now lives in intent_classifier.classify_message
+    async def plan(self, message: str, complexity: int, event_logger=None) -> Optional[Plan]:
+        """Generate a plan based on message complexity."""
+        if complexity >= 4:
+            return await self._llm_plan(message, event_logger=event_logger)
+        return self._lightweight_plan(message)
 
-import re
+    async def _llm_plan(self, message: str, event_logger=None) -> Optional[Plan]:
+        """LLM-based structured planning for complexity 4-5 with strict JSON validation."""
 
-SPLIT_PATTERN = re.compile(
-    r"\b(?:and|then|after|ensuite|puis|plus)\b",
-    re.I
-)
+        from app.services.llm.provider_factory import provider_factory
+        from app.core.config import settings
+        from app.services.prompt_service import PromptService
+        from app.services.agent_core.intent_classifier import select_tools_for_message
 
-TOOL_PATTERNS = [
-    (["list", "directory", "folder"], ("List directory contents", "ls")),
-    (["read", "file"], ("Read file content", "read_file")),
-    (["write", "create"], ("Write to file", "write_file")),
-    (["search", "find"], ("Search for content", "grep")),
-    (["docker"], ("Docker operation", "docker")),
-    (["bash", "command", "execute"], ("Execute command", "bash")),
-]
+        tools_list = ", ".join(select_tools_for_message(message)) if message else "none"
 
+        planning_template = PromptService.get_planning_prompt()
+
+        try:
+            planning_prompt = planning_template.format(
+                message=message,
+                available_tools=tools_list
+            )
+        except Exception as e:
+            logger.error(f"Planning prompt formatting failed: {e}")
+            if event_logger:
+                event_logger.emit(
+                    event_type=EventType.PLAN_FALLBACK,
+                    event_name="plan_fallback",
+                    payload={"reason": "template_format_error", "fallback": "lightweight"},
+                )
+            return self._lightweight_plan(message)
+
+        try:
+            if event_logger:
+                event_logger.emit_llm_request(
+                    model=settings.LLM_MODEL or "default",
+                    provider=settings.LLM_PROVIDER,
+                    prompt_length=len(planning_prompt),
+                    tools_count=len(tools_list.split(",")) if tools_list != "none" else 0,
+                )
+
+            provider = provider_factory.get_provider(settings.LLM_PROVIDER)
+
+            response = await provider.chat(
+                model=settings.LLM_MODEL or "default",
+                messages=[{"role": "user", "content": planning_prompt}],
+                options={"max_tokens": 500}
+            )
+
+            content = response.get("content") if isinstance(response, dict) else str(response)
+
+            if event_logger:
+                event_logger.emit_llm_response(
+                    model=settings.LLM_MODEL or "default",
+                    provider=settings.LLM_PROVIDER,
+                    tokens_in=len(planning_prompt) // 4,
+                    tokens_out=len(content) // 4,
+                    duration_ms=0,
+                    response_preview=content[:200] if content else None,
+                )
+
+            plan_data = self._parse_json_plan_strict(content)
+
+            if not plan_data:
+                logger.warning("LLM returned invalid plan JSON → fallback lightweight")
+                if event_logger:
+                    event_logger.emit(
+                        event_type=EventType.PLAN_FALLBACK,
+                        event_name="plan_fallback",
+                        payload={"reason": "invalid_json", "fallback": "lightweight"},
+                    )
+                return self._lightweight_plan(message)
+
+            steps = plan_data.get("steps", [])
+            tools = plan_data.get("tools", [])
+
+            if not steps:
+                logger.warning("LLM plan empty → fallback lightweight")
+                if event_logger:
+                    event_logger.emit(
+                        event_type=EventType.PLAN_FALLBACK,
+                        event_name="plan_fallback",
+                        payload={"reason": "empty_plan", "fallback": "lightweight"},
+                    )
+                return self._lightweight_plan(message)
+
+            return Plan(
+                steps=steps,
+                expected_tools=tools
+            )
+
+        except Exception as e:
+            logger.warning(f"LLM planning failed: {e}")
+            if event_logger:
+                event_logger.emit_error(
+                    error_type="LLMPlanningError",
+                    error_message=str(e),
+                )
+            return self._lightweight_plan(message)
 
     def _lightweight_plan(self, message: str) -> Plan:
+        """Simple heuristic - split by conjunctions."""
         steps = []
         expected_tools = []
         seen = set()
@@ -216,67 +320,9 @@ TOOL_PATTERNS = [
             expected_tools=expected_tools
         )
 
-    async def plan(self, message: str, complexity: int) -> Optional[Plan]:
-        """Generate a plan based on message complexity."""
-        return await self._llm_plan(message)
-
-    async def _llm_plan(self, message: str) -> Optional[Plan]:
-        """LLM-based structured planning for complexity 4-5 with strict JSON validation."""
-
-        from app.services.llm.provider_factory import provider_factory
-        from app.core.config import settings
-        from app.services.prompt_service import PromptService
-        from app.services.agent_core.intent_classifier import select_tools_for_message
-
-        tools_list = ", ".join(select_tools_for_message(message)) if message else "none"
-
-        planning_template = PromptService.get_planning_prompt()
-
-        # 1. Build prompt safely
-        try:
-            planning_prompt = planning_template.format(
-                message=message,
-                available_tools=tools_list
-            )
-        except Exception as e:
-            logger.error(f"Planning prompt formatting failed: {e}")
-            return self._lightweight_plan(message)
-
-        try:
-            provider = provider_factory.get_provider(settings.LLM_PROVIDER)
-
-            response = await provider.chat(
-                model=settings.LLM_MODEL or "default",
-                messages=[{"role": "user", "content": planning_prompt}],
-                options={"max_tokens": 500}
-            )
-
-            content = response.get("content") if isinstance(response, dict) else str(response)
-
-            # 2. Parse strictly
-            plan_data = self._parse_json_plan_strict(content)
-
-            if not plan_data:
-                logger.warning("LLM returned invalid plan JSON → fallback lightweight")
-                return self._lightweight_plan(message)
-
-            steps = plan_data.get("steps", [])
-            tools = plan_data.get("tools", [])
-
-            if not steps:
-                logger.warning("LLM plan empty → fallback lightweight")
-                return self._lightweight_plan(message)
-
-            return Plan(
-                steps=steps,
-                expected_tools=tools
-            )
-
-        except Exception as e:
-            logger.warning(f"LLM planning failed: {e}")
-            return self._lightweight_plan(message)
-
-    def _parse_json_plan_strict(self, content: str) -> Optional[Dict]:
+    # ═══════════════════════════════════════════════════════════════════════
+    # EXECUTION LOOP
+    # ═══════════════════════════════════════════════════════════════════════
         """Strict JSON parsing with validation."""
         try:
             content = content.strip()

@@ -75,19 +75,12 @@ class ChatOrchestrator:
         db = next(db_gen)
 
         try:
-            if event_logger and run_id:
-                event_logger.emit(
-                    event_type=EventType.AGENT_START,
-                    event_name="agent_start",
-                    payload={"model": None, "provider": None, "message_preview": text[:100]},
-                )
-
             user = self._user.get_by_telegram_chat_id(db, chat_id)
             if not user:
                 logger.warning(f"No linked user for chat_id={chat_id}")
                 await self._telegram.send_message(
                     chat_id,
-                    "❌ Account not linked. Use /link <email> to link your account."
+                    "❌ Account not linked. Use /link <email> to link your Tower account."
                 )
                 if event_logger and run_id:
                     event_logger.emit_error(
@@ -104,14 +97,6 @@ class ChatOrchestrator:
 
             conversation = session
 
-            if event_logger and run_id:
-                event_logger.set_user_id(str(user.id))
-                event_logger.emit(
-                    event_type=EventType.SESSION_RESOLVED,
-                    event_name="session_resolved",
-                    payload={"session_id": getattr(session, 'id', None), "conversation_id": str(conversation.id) if conversation else None},
-                )
-
             prefs = {}
             if user.model_prefs:
                 if user.model_prefs.model:
@@ -120,6 +105,21 @@ class ChatOrchestrator:
                     prefs["provider"] = user.model_prefs.provider
                 if user.model_prefs.current_session:
                     prefs["current_session"] = user.model_prefs.current_session
+
+            if event_logger and run_id:
+                event_logger.set_user_id(str(user.id))
+                event_logger.emit(
+                    event_type=EventType.SESSION_RESOLVED,
+                    event_name="session_resolved",
+                    payload={"session_id": getattr(session, 'id', None), "conversation_id": str(conversation.id) if conversation else None},
+                )
+
+            if event_logger and run_id:
+                event_logger.emit(
+                    event_type=EventType.AGENT_START,
+                    event_name="agent_start",
+                    payload={"model": prefs.get("model"), "provider": prefs.get("provider"), "message_preview": text[:100]},
+                )
 
             should_compress = conversation and len(conversation.messages) > 30
             if should_compress:

@@ -32,6 +32,7 @@ class EventType:
     LOCK_ACQUIRED = "lock_acquired"
 
     PLAN_GENERATED = "plan_generated"
+    PLAN_FALLBACK = "plan_fallback"
 
     SYNTHESIS = "synthesis"
 
