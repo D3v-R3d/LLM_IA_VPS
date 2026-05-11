@@ -171,7 +171,7 @@ class ChatOrchestrator:
             if prefs.get("provider") or prefs.get("model"):
                 logger.info("Calling synthesize response...")
                 response = await self._synthesize_response(
-                    response, prefs.get("provider"), prefs.get("model")
+                    response, prefs.get("provider"), prefs.get("model"), event_logger=event_logger
                 )
                 logger.info(f"Synthesis result len: {len(response)}")
 
@@ -222,7 +222,8 @@ class ChatOrchestrator:
         self,
         response: str,
         provider_name: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        event_logger=None,
     ) -> str:
         """Synthesize response using LLM for natural language."""
         if not response or len(response) < 20:
@@ -242,6 +243,14 @@ class ChatOrchestrator:
             {"role": "user", "content": f"Réponse à synthétiser:\n{response}"}
         ]
 
+        if event_logger:
+            event_logger.emit_llm_request(
+                model=model or "default",
+                provider=provider,
+                prompt_length=len(synthesis_system) + len(response),
+                tools_count=0,
+            )
+
         try:
             if provider == "openrouter":
                 llm_response = await llm_provider.chat(
@@ -256,10 +265,27 @@ class ChatOrchestrator:
                     options={"max_tokens": 2000}
                 )
 
-            if llm_response and llm_response.get("content"):
-                return llm_response["content"]
+            content = llm_response.get("content") if isinstance(llm_response, dict) else str(llm_response) if llm_response else ""
+
+            if event_logger:
+                event_logger.emit_llm_response(
+                    model=model or "default",
+                    provider=provider,
+                    tokens_in=0,
+                    tokens_out=0,
+                    duration_ms=0,
+                    response_preview=content[:500] if content else None,
+                )
+
+            if content:
+                return content
         except Exception as e:
             logger.warning(f"Synthesis failed: {e}")
+            if event_logger:
+                event_logger.emit_error(
+                    error_type="SynthesisError",
+                    error_message=str(e),
+                )
 
         return response
 

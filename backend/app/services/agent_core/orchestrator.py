@@ -857,31 +857,36 @@ class AgentOrchestrator:
             )
 
             duration_ms = int((time.time() - start_time) * 1000)
+            try:
+                content = response.get("message", {}).get("content", "") or ""
+            except Exception:
+                content = str(response)[:500] if response else ""
             if event_logger:
-                try:
-                    content = response.get("message", {}).get("content", "") or ""
-                    event_logger.emit_llm_response(
-                        model=model,
-                        provider=provider_name or settings.LLM_PROVIDER,
-                        tokens_in=0,
-                        tokens_out=0,
-                        duration_ms=duration_ms,
-                        response_preview=content[:500] if content else None,
-                    )
-                except Exception:
-                    pass
+                event_logger.emit_llm_response(
+                    model=model,
+                    provider=provider_name or settings.LLM_PROVIDER,
+                    tokens_in=0,
+                    tokens_out=0,
+                    duration_ms=duration_ms,
+                    response_preview=content[:500] if content else None,
+                )
 
             return response
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             if event_logger:
-                try:
-                    event_logger.emit_error(
-                        error_type="LLMCallError",
-                        error_message=str(e),
-                    )
-                except Exception:
-                    pass
+                event_logger.emit_error(
+                    error_type="LLMCallError",
+                    error_message=str(e),
+                )
+                event_logger.emit_llm_response(
+                    model=model,
+                    provider=provider_name or settings.LLM_PROVIDER,
+                    tokens_in=0,
+                    tokens_out=0,
+                    duration_ms=duration_ms,
+                    response_preview=None,
+                )
 
             logger.error(f"LLM call failed: {e}")
             return {"message": {"content": f"Error: {str(e)}", "tool_calls": []}}
