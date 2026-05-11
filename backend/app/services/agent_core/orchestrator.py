@@ -852,11 +852,21 @@ class AgentOrchestrator:
                )
 
            # ---------- files (including nested in data like NAS results)
-           elif isinstance(data, dict) and ("files" in data or (data.get("data", {}).get("files"))):
-               file_list = data.get("files") or data.get("data", {}).get("files", [])
-               count = len(file_list) or data.get("data", {}).get("total", 0)
+           elif isinstance(data, dict) and (
+               "files" in data or 
+               "shares" in data or
+               ("files" in (data.get("data") or {}) or "shares" in (data.get("data") or {}))
+           ):
+               file_list = data.get("files") or data.get("shares") or data.get("data", {}).get("files") or data.get("data", {}).get("shares") or []
+               total_count = len(file_list)
+               if not total_count:
+                   total_count = data.get("data", {}).get("total", 0)
                if not file_list:
-                   sections.append(f"📂 Recherche NAS\n\nAucun résultat trouvé pour cette recherche.")
+                   # Check if this is a NAS result with empty files
+                   if "data" in data and ("files" in data.get("data", {}) or "shares" in data.get("data", {})):
+                       sections.append(f"📂 Recherche NAS\n\nAucun fichier trouvé.")
+                   else:
+                       sections.append(f"📂 Recherche NAS\n\nAucun résultat trouvé pour cette recherche.")
                    continue
                lines_out = []
                for f in file_list[:20]:
@@ -869,12 +879,20 @@ class AgentOrchestrator:
                        lines_out.append(f"{icon} **{name}**\n   └─ `{path_short}`")
                    else:
                        lines_out.append(f"📄 {f}")
-               if count > 20:
-                   lines_out.append(f"\n   ... et **{count - 20}** autres fichiers")
+               if total_count > 20:
+                   lines_out.append(f"\n   ... et **{total_count - 20}** autres fichiers")
                sections.append(
                    f"📂 Fichiers trouvés\n\n"
-                   f"J'ai trouvé **{count}** fichier(s) 👇\n\n"
+                   f"J'ai trouvé **{total_count}** fichier(s) 👇\n\n"
                    + "\n".join(lines_out)
+               )
+
+           # ---------- generic dict fallback (prevents raw dict display)
+           elif isinstance(data, dict):
+               lines = [f"• **{k}**: {str(v)[:100]}" for k, v in list(data.items())[:10]]
+               sections.append(
+                   f"🔧 Résultat de `{tool}`\n\n"
+                   + "\n".join(lines)
                )
 
            # ---------- file content

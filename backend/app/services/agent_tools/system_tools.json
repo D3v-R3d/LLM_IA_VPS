@@ -1,0 +1,182 @@
+{
+  "docker": {
+    "description": "Manage Docker containers and images for application deployment.",
+    "semantic_anchor": "Control Docker containers and manage application deployments",
+    "intent_type": "mutate",
+    "tool_family": "system",
+    "keywords": [
+      "run docker container",
+      "manage application containers",
+      "check container status",
+      "view container logs",
+      "start stop containers",
+      "demarrer un container",
+      "voir les logs",
+      "gerer les conteneurs",
+      "status des containers",
+      "lancer une application docker"
+    ],
+    "aliases": [
+      "manage containers",
+      "docker operations",
+      "container management",
+      "deploy docker",
+      "start stop restart container",
+      "gestion docker",
+      "conteneurs docker"
+    ],
+    "negative_keywords": [
+      "search for files",
+      "read file content",
+      "execute shell commands",
+      "run git commands",
+      "write to filesystem"
+    ],
+    "examples": [
+      "show running containers",
+      "check logs of my web app container",
+      "run a new nginx container",
+      "stop the postgres container",
+      "restart the api container",
+      "affiche les containers en cours"
+    ],
+    "use_cases": [
+      "deployment",
+      "container management",
+      "monitoring"
+    ],
+    "parameters": {
+      "command": "string (required)"
+    },
+    "tool_class": "DockerTool",
+    "embedding_boost": 1.2,
+    "priority": 2,
+    "meta": {
+      "safe": false,
+      "cost": 2,
+      "parallel_safe": false,
+      "max_calls_per_run": 5,
+      "destructive": false
+    }
+  },
+  "bash": {
+    "description": "Execute shell commands in the system terminal.",
+    "semantic_anchor": "Run terminal commands to perform system operations",
+    "intent_type": "mutate",
+    "tool_family": "system",
+    "keywords": [
+      "run terminal command",
+      "execute shell command",
+      "run system command",
+      "open terminal",
+      "launch script",
+      "execute une commande",
+      "lance une commande terminal",
+      "lance un script",
+      "ouvre le terminal",
+      "commande shell"
+    ],
+    "aliases": [
+      "terminal command",
+      "shell execution",
+      "run command",
+      "system command",
+      "execute script",
+      "commande terminal",
+      "execution shell"
+    ],
+    "negative_keywords": [
+      "search for files in filesystem",
+      "read file content",
+      "git operations",
+      "docker operations",
+      "database queries"
+    ],
+    "examples": [
+      "check system resource usage",
+      "run a python script",
+      "execute a shell command",
+      "check disk space",
+      "run the build script",
+      "execute la commande top"
+    ],
+    "use_cases": [
+      "system operations",
+      "script execution",
+      "monitoring",
+      "maintenance"
+    ],
+    "parameters": {
+      "command": "string (required)",
+      "timeout": "number (optional, default 30)"
+    },
+    "tool_class": "BashTool",
+    "embedding_boost": 1.0,
+    "priority": 1,
+    "meta": {
+      "safe": false,
+      "cost": 3,
+      "parallel_safe": false,
+      "max_calls_per_run": 3,
+      "destructive": false
+    }
+  },
+  "pkill": {
+    "description": "Terminate a running process on the system.",
+    "semantic_anchor": "Stop a running process by its name",
+    "intent_type": "mutate",
+    "tool_family": "system",
+    "keywords": [
+      "stop a process",
+      "kill running application",
+      "terminate process",
+      "stop service",
+      "end a running program",
+      "arreter un processus",
+      "tuer une application",
+      "stopper un service",
+      "termine ce programme"
+    ],
+    "aliases": [
+      "kill process",
+      "stop service",
+      "terminate program",
+      "end process",
+      "kill application",
+      "arret processus",
+      "stopper application"
+    ],
+    "negative_keywords": [
+      "search for files",
+      "read file content",
+      "execute shell commands",
+      "docker operations",
+      "git operations"
+    ],
+    "examples": [
+      "kill the python process",
+      "stop the nginx service",
+      "terminate the node application",
+      "end the background job",
+      "arrete le processus python"
+    ],
+    "use_cases": [
+      "process management",
+      "maintenance",
+      "cleanup"
+    ],
+    "parameters": {
+      "process_name": "string (required)"
+    },
+    "tool_class": "PkillTool",
+    "embedding_boost": 1.0,
+    "priority": 1,
+    "meta": {
+      "safe": false,
+      "cost": 1,
+      "parallel_safe": false,
+      "max_calls_per_run": 0,
+      "destructive": true
+    }
+  }
+}

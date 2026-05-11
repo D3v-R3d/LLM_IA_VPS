@@ -1,0 +1,180 @@
+{
+  "web_search": {
+    "description": "Search the internet for information, news, and answers.",
+    "semantic_anchor": "Query the internet to find information, answers, and knowledge",
+    "intent_type": "search",
+    "tool_family": "web",
+    "keywords": [
+      "search the internet",
+      "find information online",
+      "look up something on web",
+      "search for latest news",
+      "find answers on the web",
+      "cherche sur internet",
+      "recherche sur le web",
+      "trouve de l'information",
+      "cherche les dernieres nouvelles",
+      "what is the latest on"
+    ],
+    "aliases": [
+      "internet search",
+      "web query",
+      "google search",
+      "search online",
+      "find info web",
+      "recherche internet",
+      "cherche sur le web"
+    ],
+    "negative_keywords": [
+      "fetch specific url",
+      "read specific webpage",
+      "get page content",
+      "open url",
+      "scrape webpage"
+    ],
+    "examples": [
+      "search for the latest AI news",
+      "what is quantum computing",
+      "who is Elon Musk",
+      "find information about machine learning",
+      "cherche les dernieres nouvelles tech"
+    ],
+    "use_cases": [
+      "search",
+      "research",
+      "information retrieval"
+    ],
+    "parameters": {
+      "query": "string (required)",
+      "num_results": "number (optional, default 5)"
+    },
+    "tool_class": "WebSearchTool",
+    "embedding_boost": 1.2,
+    "priority": 2,
+    "meta": {
+      "safe": true,
+      "cost": 3,
+      "parallel_safe": true,
+      "max_calls_per_run": 3,
+      "destructive": false
+    }
+  },
+  "web_fetch": {
+    "description": "Extract and retrieve the content of a web page.",
+    "semantic_anchor": "Load and extract text content from a specific URL",
+    "intent_type": "read",
+    "tool_family": "web",
+    "keywords": [
+      "fetch web page",
+      "load content from url",
+      "scrape webpage",
+      "get page content",
+      "read webpage content",
+      "recupere le contenu d'une page web",
+      "ouvre cette page",
+      "extrait le texte du site",
+      "charge le contenu de l'url"
+    ],
+    "aliases": [
+      "scrape url",
+      "fetch url content",
+      "load webpage",
+      "get web page",
+      "extract from url",
+      "recupere page web",
+      "extrait contenu url"
+    ],
+    "negative_keywords": [
+      "search the internet",
+      "google search",
+      "find information",
+      "web search",
+      "query web"
+    ],
+    "examples": [
+      "fetch the content of example.com",
+      "get the text from wikipedia page",
+      "load and read this webpage",
+      "scrap the blog article",
+      "recupere le contenu de cette page"
+    ],
+    "use_cases": [
+      "content extraction",
+      "page reading",
+      "data retrieval"
+    ],
+    "parameters": {
+      "url": "string (required)"
+    },
+    "tool_class": "WebFetchTool",
+    "embedding_boost": 1.0,
+    "priority": 1,
+    "meta": {
+      "safe": true,
+      "cost": 2,
+      "parallel_safe": true,
+      "max_calls_per_run": 5,
+      "destructive": false
+    }
+  },
+  "api_call": {
+    "description": "Call an external API to get or send data.",
+    "semantic_anchor": "Communicate with an external API endpoint to exchange data",
+    "intent_type": "read",
+    "tool_family": "web",
+    "keywords": [
+      "call external api",
+      "request data from service",
+      "fetch from api endpoint",
+      "communicate with web service",
+      "query api",
+      "appeler une api externe",
+      "requete vers un service web",
+      "interroge le point de terminaison",
+      "appele le web service"
+    ],
+    "aliases": [
+      "api request",
+      "call api endpoint",
+      "http request",
+      "rest api call",
+      "fetch api",
+      "requete http",
+      "appel web service"
+    ],
+    "negative_keywords": [
+      "search the internet",
+      "google search",
+      "fetch webpage",
+      "scrape url"
+    ],
+    "examples": [
+      "get users from the api",
+      "post data to the endpoint",
+      "call the weather api",
+      "fetch data from external service",
+      "appele l'api pour recuperer les donnees"
+    ],
+    "use_cases": [
+      "data exchange",
+      "api integration",
+      "service communication"
+    ],
+    "parameters": {
+      "url": "string (required)",
+      "method": "string (optional, default GET)",
+      "headers": "object (optional)",
+      "body": "string (optional)"
+    },
+    "tool_class": "APIFetchTool",
+    "embedding_boost": 1.0,
+    "priority": 1,
+    "meta": {
+      "safe": true,
+      "cost": 2,
+      "parallel_safe": true,
+      "max_calls_per_run": 0,
+      "destructive": false
+    }
+  }
+}

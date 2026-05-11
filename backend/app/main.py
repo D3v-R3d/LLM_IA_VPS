@@ -37,6 +37,7 @@ from app.api.v1.llm import router as llm_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.telegram import router as telegram_router
 from app.api.v1.user_model_prefs import router as user_model_prefs_router
+from app.api.v1.tools import router as tools_router
 
 
 @asynccontextmanager
@@ -94,6 +95,7 @@ app.include_router(llm_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(telegram_router, prefix="/api/v1")
 app.include_router(user_model_prefs_router, prefix="/api/v1")
+app.include_router(tools_router, prefix="/api/v1")
 
 
 @app.get("/")

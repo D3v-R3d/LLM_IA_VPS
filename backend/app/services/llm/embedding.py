@@ -5,7 +5,7 @@ Generates text embeddings using Ollama API.
 """
 
 from typing import List, Dict, Any, Optional, Union
-from app.services.llm.llm_base import LLMBaseClient
+import httpx
 from app.core.config import settings
 
 
@@ -32,13 +32,13 @@ class EmbeddingService:
         self.base_url = base_url or settings.OLLAMA_HOST
         self.model = model
 
-    async def embed(
+    def embed(
         self,
         input: Union[str, List[str]],
         truncate: bool = True
     ) -> Dict[str, Any]:
         """
-        Generate embeddings for text.
+        Generate embeddings for text (sync).
 
         Args:
             input: Single text string or list of texts
@@ -46,30 +46,21 @@ class EmbeddingService:
 
         Returns:
             API response with embeddings array
-
-        Example:
-            result = await service.embed("Hello world")
-            embeddings = result.get("embeddings", [])
         """
-        client = LLMBaseClient(self.base_url)
-        try:
+        with httpx.Client(timeout=300.0) as client:
             payload = {
                 "model": self.model,
                 "input": input,
                 "truncate": truncate
             }
-
-            response = await client.client.post(
-                f"{client.base_url}/api/embed",
-                json=payload,
-                headers=client._get_headers()
+            response = client.post(
+                f"{self.base_url}/api/embed",
+                json=payload
             )
             response.raise_for_status()
             return response.json()
-        finally:
-            await client.close()
 
-    async def embed_single(self, text: str) -> List[float]:
+    def embed_single(self, text: str) -> List[float]:
         """
         Generate embedding for single text.
 
@@ -79,11 +70,11 @@ class EmbeddingService:
         Returns:
             Embedding vector
         """
-        result = await self.embed(text)
+        result = self.embed(text)
         embeddings = result.get("embeddings", [])
         return embeddings[0] if embeddings else []
 
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for multiple texts.
 
@@ -93,29 +84,23 @@ class EmbeddingService:
         Returns:
             List of embedding vectors
         """
-        result = await self.embed(texts)
+        result = self.embed(texts)
         return result.get("embeddings", [])
 
-    async def list_models(self) -> List[str]:
+    def list_models(self) -> List[str]:
         """
         List available embedding models.
 
         Returns:
             List of model names
         """
-        client = LLMBaseClient(self.base_url)
-        try:
-            response = await client.client.get(
-                f"{client.base_url}/api/tags",
-                headers=client._get_headers()
-            )
+        with httpx.Client(timeout=300.0) as client:
+            response = client.get(f"{self.base_url}/api/tags")
             response.raise_for_status()
             data = response.json()
             return [m.get("name") for m in data.get("models", [])]
-        finally:
-            await client.close()
 
-    async def health_check(self) -> bool:
+    def health_check(self) -> bool:
         """
         Check if embedding service is reachable.
 
@@ -123,7 +108,7 @@ class EmbeddingService:
             True if service is healthy
         """
         try:
-            await self.embed("health check")
+            self.embed("health check")
             return True
         except Exception:
             return False

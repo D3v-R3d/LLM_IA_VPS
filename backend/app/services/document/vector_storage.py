@@ -3,12 +3,24 @@ Vector Storage Service
 
 Stores and retrieves vector embeddings in Qdrant.
 Provides all Qdrant operations for document embeddings.
+
+Optimized for:
+- Connection reuse via singleton
+- Async I/O for non-blocking operations
+- Native QdrantClient API usage
+- Chunked batching for large inserts
 """
 
+import asyncio
+import logging
 from typing import List, Dict, Any, Optional
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+CHUNK_SIZE = 256
 
 
 class VectorStorageService:
@@ -16,7 +28,10 @@ class VectorStorageService:
     Service for storing and searching vectors in Qdrant.
 
     Handles collection management, point operations, and search.
+    Thread-safe singleton pattern for connection reuse.
     """
+
+    _instances: Dict[str, "VectorStorageService"] = {}
 
     def __init__(self, url: str = "http://qdrant:6333", port: int = 6333):
         """
@@ -28,7 +43,42 @@ class VectorStorageService:
         """
         self.url = url
         self.port = port
-        self.client = QdrantClient(url=url, port=port)
+        self.client = QdrantClient(url=url, port=port, check_compatibility=False)
+
+    @classmethod
+    def get_instance(cls, url: str = "http://qdrant:6333", port: int = 6333) -> "VectorStorageService":
+        """Get or create singleton instance for this URL/port."""
+        key = f"{url}:{port}"
+        if key not in cls._instances:
+            cls._instances[key] = cls(url=url, port=port)
+        return cls._instances[key]
+
+    def close(self):
+        """Close client connection."""
+        self.client.close()
+
+    def _ensure_collection(
+        self,
+        collection_name: str,
+        vector_size: int = 768,
+        distance: str = "COSINE"
+    ) -> bool:
+        """Internal: ensure collection exists."""
+        dist = {
+            "COSINE": Distance.COSINE,
+            "EUCLID": Distance.EUCLID,
+            "DOT": Distance.DOT
+        }.get(distance.upper(), Distance.COSINE)
+
+        try:
+            self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(size=vector_size, distance=dist)
+            )
+            return True
+        except Exception as e:
+            logger.debug(f"Collection creation: {e}")
+            return False
 
     def create_collection(
         self,
@@ -48,19 +98,18 @@ class VectorStorageService:
             True if created successfully
         """
         try:
-            distance_map = {
+            dist = {
                 "COSINE": Distance.COSINE,
                 "EUCLID": Distance.EUCLID,
                 "DOT": Distance.DOT
-            }
-            dist = distance_map.get(distance.upper(), Distance.COSINE)
-
+            }.get(distance.upper(), Distance.COSINE)
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=vector_size, distance=dist)
             )
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"create_collection failed: {e}")
             return False
 
     def collection_exists(self, collection_name: str) -> bool:
@@ -98,6 +147,49 @@ class VectorStorageService:
             return self.create_collection(collection_name, vector_size)
         return True
 
+    def upsert_points(
+        self,
+        collection_name: str,
+        vectors: List[List[float]],
+        payloads: List[Dict[str, Any]],
+        ids: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Upsert points with custom IDs.
+
+        Args:
+            collection_name: Target collection
+            vectors: List of vectors
+            payloads: List of metadata per vector
+            ids: Optional custom IDs (generated if not provided)
+
+        Returns:
+            True if successful
+        """
+        try:
+            point_ids = ids if ids else [None for _ in vectors]
+            points = [
+                PointStruct(id=pid, vector=vec, payload=pay)
+                for pid, vec, pay in zip(point_ids, vectors, payloads)
+            ]
+            self.client.upsert(collection_name=collection_name, points=points)
+            return True
+        except Exception as e:
+            logger.error(f"upsert_points failed: {e}")
+            return False
+
+    async def upsert_points_async(
+        self,
+        collection_name: str,
+        vectors: List[List[float]],
+        payloads: List[Dict[str, Any]],
+        ids: Optional[List[str]] = None
+    ) -> bool:
+        """Async version of upsert_points."""
+        return await asyncio.to_thread(
+            self.upsert_points, collection_name, vectors, payloads, ids
+        )
+
     def insert_vectors(
         self,
         collection_name: str,
@@ -105,7 +197,7 @@ class VectorStorageService:
         payloads: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
         """
-        Insert vectors into collection.
+        Insert vectors into collection with automatic ID generation.
 
         Args:
             collection_name: Target collection
@@ -115,31 +207,61 @@ class VectorStorageService:
         Returns:
             True if successful
         """
-        try:
-            points = []
-            for i, vector in enumerate(vectors):
-                point_id = str(uuid4())
-                payload = payloads[i] if payloads and i < len(payloads) else {}
+        plds = payloads if payloads else [{} for _ in vectors]
+        return self.upsert_points(collection_name, vectors, plds)
 
-                points.append(PointStruct(
-                    id=point_id,
-                    vector=vector,
-                    payload=payload
-                ))
+    def insert_vectors_chunked(
+        self,
+        collection_name: str,
+        vectors: List[List[float]],
+        payloads: Optional[List[Dict[str, Any]]] = None
+    ) -> int:
+        """
+        Insert vectors in chunks for large datasets.
 
-            self.client.upsert(collection_name=collection_name, points=points)
-            return True
-        except Exception as e:
-            import logging
-            logging.error(f"insert_vectors failed: {e}")
-            return False
+        Args:
+            collection_name: Target collection
+            vectors: List of vectors to insert
+            payloads: Optional metadata per vector
+
+        Returns:
+            Number of vectors inserted
+        """
+        plds = payloads if payloads else [{} for _ in vectors]
+        total = 0
+        for i in range(0, len(vectors), CHUNK_SIZE):
+            chunk_vecs = vectors[i:i + CHUNK_SIZE]
+            chunk_pays = plds[i:i + CHUNK_SIZE]
+            if self.upsert_points(collection_name, chunk_vecs, chunk_pays):
+                total += len(chunk_vecs)
+        return total
+
+    async def insert_vectors_chunked_async(
+        self,
+        collection_name: str,
+        vectors: List[List[float]],
+        payloads: Optional[List[Dict[str, Any]]] = None
+    ) -> int:
+        """Async version of insert_vectors_chunked."""
+        plds = payloads if payloads else [{} for _ in vectors]
+        total = 0
+        for i in range(0, len(vectors), CHUNK_SIZE):
+            chunk_vecs = vectors[i:i + CHUNK_SIZE]
+            chunk_pays = plds[i:i + CHUNK_SIZE]
+            success = await asyncio.to_thread(
+                self.upsert_points, collection_name, chunk_vecs, chunk_pays
+            )
+            if success:
+                total += len(chunk_vecs)
+        return total
 
     def search(
         self,
         collection_name: str,
         query_vector: List[float],
         limit: int = 5,
-        score_threshold: Optional[float] = None
+        score_threshold: Optional[float] = None,
+        with_payload: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Search for similar vectors.
@@ -149,6 +271,7 @@ class VectorStorageService:
             query_vector: Query vector
             limit: Maximum results
             score_threshold: Minimum similarity score
+            with_payload: Include payload in results
 
         Returns:
             List of results with id, score, payload
@@ -169,17 +292,25 @@ class VectorStorageService:
             )
 
             return [
-                {
-                    "id": r.id,
-                    "score": r.score,
-                    "payload": r.payload
-                }
+                {"id": r.id, "score": r.score, "payload": r.payload}
                 for r in results.result
             ]
         except Exception as e:
-            import logging
-            logging.error(f"search failed: {e}")
+            logger.error(f"search failed: {e}")
             return []
+
+    async def search_async(
+        self,
+        collection_name: str,
+        query_vector: List[float],
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+        with_payload: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Async version of search."""
+        return await asyncio.to_thread(
+            self.search, collection_name, query_vector, limit, score_threshold, with_payload
+        )
 
     def scroll_points(
         self,
@@ -212,18 +343,26 @@ class VectorStorageService:
 
             return {
                 "points": [
-                    {
-                        "id": p.id,
-                        "vector": p.vector,
-                        "payload": p.payload,
-                        "score": getattr(p, 'score', None)
-                    }
+                    {"id": p.id, "vector": p.vector, "payload": p.payload}
                     for p in points
                 ],
                 "next_page_offset": next_page_offset
             }
-        except Exception:
+        except Exception as e:
+            logger.error(f"scroll_points failed: {e}")
             return {"points": [], "next_page_offset": None}
+
+    async def scroll_points_async(
+        self,
+        collection_name: str,
+        limit: int = 100,
+        offset: Optional[str] = None,
+        with_vectors: bool = False
+    ) -> Dict[str, Any]:
+        """Async version of scroll_points."""
+        return await asyncio.to_thread(
+            self.scroll_points, collection_name, limit, offset, with_vectors
+        )
 
     def count_points(
         self,
@@ -249,7 +388,8 @@ class VectorStorageService:
                 exact=exact
             )
             return result.count
-        except Exception:
+        except Exception as e:
+            logger.error(f"count_points failed: {e}")
             return 0
 
     def get_point(
@@ -275,13 +415,10 @@ class VectorStorageService:
             )
             if results:
                 p = results[0]
-                return {
-                    "id": p.id,
-                    "vector": p.vector,
-                    "payload": p.payload
-                }
+                return {"id": p.id, "vector": p.vector, "payload": p.payload}
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"get_point failed: {e}")
             return None
 
     def search_batch(
@@ -310,16 +447,25 @@ class VectorStorageService:
                 limit=limit,
                 score_threshold=score_threshold
             )
-
             return [
-                [
-                    {"id": r.id, "score": r.score, "payload": r.payload}
-                    for r in result_set
-                ]
+                [{"id": r.id, "score": r.score, "payload": r.payload} for r in result_set]
                 for result_set in results
             ]
-        except Exception:
+        except Exception as e:
+            logger.error(f"search_batch failed: {e}")
             return []
+
+    async def search_batch_async(
+        self,
+        collection_name: str,
+        query_vectors: List[List[float]],
+        limit: int = 5,
+        score_threshold: Optional[float] = None
+    ) -> List[List[Dict[str, Any]]]:
+        """Async version of search_batch."""
+        return await asyncio.to_thread(
+            self.search_batch, collection_name, query_vectors, limit, score_threshold
+        )
 
     def create_payload_index(
         self,
@@ -340,23 +486,21 @@ class VectorStorageService:
         """
         try:
             from qdrant_client.models import FieldIndex, PayloadSchemaType
-
             schema_type_map = {
                 "text": PayloadSchemaType.TEXT,
                 "integer": PayloadSchemaType.INTEGER,
                 "float": PayloadSchemaType.FLOAT,
                 "bool": PayloadSchemaType.BOOL
             }
-
             schema_type = schema_type_map.get(field_type, PayloadSchemaType.TEXT)
-
             self.client.create_payload_index(
                 collection_name=collection_name,
                 field_name=field_name,
                 field_schema=schema_type
             )
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"create_payload_index failed: {e}")
             return False
 
     def recommend(
@@ -382,7 +526,6 @@ class VectorStorageService:
         """
         try:
             from qdrant_client.models import RecommendStrategy
-
             results = self.client.recommend(
                 collection_name=collection_name,
                 positive=positive_ids,
@@ -391,12 +534,9 @@ class VectorStorageService:
                 score_threshold=score_threshold,
                 strategy=RecommendStrategy.AVERAGE
             )
-
-            return [
-                {"id": r.id, "score": r.score, "payload": r.payload}
-                for r in results
-            ]
-        except Exception:
+            return [{"id": r.id, "score": r.score, "payload": r.payload} for r in results]
+        except Exception as e:
+            logger.error(f"recommend failed: {e}")
             return []
 
     def delete_collection(self, collection_name: str) -> bool:
@@ -412,7 +552,8 @@ class VectorStorageService:
         try:
             self.client.delete_collection(collection_name)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"delete_collection failed: {e}")
             return False
 
     def get_collection_info(self, collection_name: str) -> Optional[Dict[str, Any]]:
@@ -433,7 +574,8 @@ class VectorStorageService:
                 "points_count": info.points_count,
                 "status": info.status
             }
-        except Exception:
+        except Exception as e:
+            logger.error(f"get_collection_info failed: {e}")
             return None
 
     def health_check(self) -> bool:
