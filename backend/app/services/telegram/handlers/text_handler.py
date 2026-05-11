@@ -12,6 +12,45 @@ from app.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
+# Global cached instances
+_cached_orchestrator = None
+_cached_registry = None
+_cached_llm = None
+
+
+def _get_cached_orchestrator(context: HandlerContext):
+    """Get or create cached orchestrator instance."""
+    global _cached_orchestrator, _cached_registry, _cached_llm
+    
+    if _cached_orchestrator is not None:
+        return _cached_orchestrator
+    
+    from app.services.agent_tools import get_registry
+    from app.services.agent_core import ToolExecutor
+    from app.services.llm.provider_factory import provider_factory
+    from app.core.config import settings
+    from app.services.agent_core.runner import AgentRunner
+    from app.services.agent_core.context_builder import ContextBuilder
+    from app.orchestration.chat_orchestrator import ChatOrchestrator
+    
+    _cached_registry = get_registry()
+    _cached_llm = provider_factory.get_provider(settings.LLM_PROVIDER)
+    tool_executor = ToolExecutor(registry=_cached_registry)
+    agent_runner = AgentRunner(llm=_cached_llm, tool_executor=tool_executor, provider_factory=provider_factory)
+    context_builder = ContextBuilder()
+    
+    _cached_orchestrator = ChatOrchestrator(
+        conversation_service=context.conversation_service,
+        message_service=context.message_service,
+        user_service=context.user_service,
+        telegram_service=context.telegram_service,
+        agent_runner=agent_runner,
+        context_builder=context_builder,
+    )
+    
+    logger.info("TextHandler: orchestrator cached")
+    return _cached_orchestrator
+
 
 class TextHandler(BaseHandler):
     """
@@ -58,24 +97,7 @@ class TextHandler(BaseHandler):
                     payload={"user_id": str(user.id), "username": getattr(user, 'username', None) or getattr(user, 'email', None)},
                 )
 
-            if self._orchestrator is None:
-                from app.services.agent_tools import get_registry
-                from app.services.agent_core import ToolExecutor
-                from app.services.llm.provider_factory import provider_factory
-
-                registry = get_registry()
-                llm = provider_factory.get_provider(settings.LLM_PROVIDER)
-                tool_executor = ToolExecutor(registry=registry)
-                agent_runner = AgentRunner(llm=llm, tool_executor=tool_executor, provider_factory=provider_factory)
-                context_builder = ContextBuilder()
-                self._orchestrator = ChatOrchestrator(
-                    conversation_service=context.conversation_service,
-                    message_service=context.message_service,
-                    user_service=context.user_service,
-                    telegram_service=context.telegram_service,
-                    agent_runner=agent_runner,
-                    context_builder=context_builder,
-                )
+            self._orchestrator = _get_cached_orchestrator(context)
 
             response = await self._orchestrator.route_message(
                 chat_id=update.chat_id,

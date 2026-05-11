@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Any
 
 from app.services.agent_core.models import Decision, Plan, RunState, detect_loop_v2, generate_call_key
+from app.services.agent_core.intent_classifier import select_tools_for_message
 from app.observability.event_logger import EventLogger
 from app.observability.event_types import EventType, EventLevel
 
@@ -58,6 +59,10 @@ class OrchestratorConfig:
     loop_window_size: int = 5
     max_consecutive_same_tool: int = 3
     debug: bool = False
+    # Performance tunables (v2.2)
+    llm_timeout: int = 45
+    tool_timeout: int = 30
+    retry_timeout: int = 15
 
     @classmethod
     def from_env(cls) -> "OrchestratorConfig":
@@ -71,7 +76,10 @@ class OrchestratorConfig:
             context_max_messages=int(os.getenv("AGENT_CONTEXT_MAX_MESSAGES", "10")),
             loop_window_size=int(os.getenv("AGENT_LOOP_WINDOW_SIZE", "5")),
             max_consecutive_same_tool=int(os.getenv("AGENT_MAX_CONSECUTIVE_SAME_TOOL", "3")),
-            debug=os.getenv("AGENT_DEBUG", "false").lower() == "true"
+            debug=os.getenv("AGENT_DEBUG", "false").lower() == "true",
+            llm_timeout=int(os.getenv("AGENT_LLM_TIMEOUT", "45")),
+            tool_timeout=int(os.getenv("AGENT_TOOL_TIMEOUT", "30")),
+            retry_timeout=int(os.getenv("AGENT_RETRY_TIMEOUT", "15")),
         )
 
 
@@ -81,7 +89,7 @@ class AgentOrchestrator:
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         if config is None:
             self.config = OrchestratorConfig.from_env()
-        elif hasattr(config, 'context_max_messages'):
+        elif isinstance(config, OrchestratorConfig):
             self.config = config
         else:
             from app.services.agent_core.config import AgentConfig
@@ -94,7 +102,11 @@ class AgentOrchestrator:
                     max_retries_per_tool=getattr(config, 'max_retries_per_tool', 2),
                     context_max_messages=getattr(config, 'context_max_messages', 10),
                     loop_window_size=getattr(config, 'loop_window_size', 5),
-                    debug=config.debug
+                    max_consecutive_same_tool=getattr(config, 'max_consecutive_same_tool', 3),
+                    debug=config.debug,
+                    llm_timeout=45,
+                    tool_timeout=30,
+                    retry_timeout=15,
                 )
             else:
                 self.config = config
@@ -106,6 +118,9 @@ class AgentOrchestrator:
 
         self.registry = get_registry()
         self.tool_executor = ToolExecutor(registry=self.registry)
+        
+        self._provider_cache = {}
+        self._tools_cache = None
 
         budgets_config = os.getenv("AGENT_TOOL_BUDGETS", "")
         budgets = {}
@@ -173,12 +188,17 @@ class AgentOrchestrator:
                 logger.debug(f"Plan: {len(plan.steps)} steps, tools: {plan.expected_tools}")
 
             context = self._build_context(system_prompt, messages_history, user_message)
+            
+            selected_tool_names = select_tools_for_message(user_message) if user_message else []
+            logger.info(f"Selected tools for LLM: {selected_tool_names}")
+            
             response = await self._execute_loop(
                 context=context,
                 model=model,
                 provider_name=provider_name,
                 state=state,
-                db_session=db_session
+                db_session=db_session,
+                selected_tools=selected_tool_names
             )
 
             final_response = await self.synthesize(
@@ -375,7 +395,7 @@ class AgentOrchestrator:
             return None
 
     # ═══════════════════════════════════════════════════════════════════════
-    # EXECUTION LOOP
+    # EXECUTION LOOP V2 - OPTIMIZED
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _execute_loop(
@@ -384,20 +404,30 @@ class AgentOrchestrator:
         model: Optional[str],
         provider_name: Optional[str],
         state: RunState,
-        db_session: Any = None
+        db_session: Any = None,
+        selected_tools: Optional[List[Dict]] = None
     ) -> Dict:
-        """Main execution loop with all improvements."""
+        """Optimized execution loop with fast path and parallel execution."""
+        
         max_steps = min(self.config.max_steps, self.config.hard_limit)
-        all_tool_results = []
-
+        
         for step in range(1, max_steps + 1):
+            loop_start = time.time()
+            llm_start = time.time()
             state.iteration = step
             state.step_retries = 0
             logger.debug(f"Execution step: {step}/{max_steps}")
 
-            response = await self._call_llm(context, model, provider_name, db_session, run_id=state.run_id)
+            response = await self._call_llm(context, model, provider_name, db_session, run_id=state.run_id, selected_tools=selected_tools)
+            llm_ms = int((time.time() - llm_start) * 1000)
+            logger.info(f"STEP {step}: LLM took {llm_ms}ms")
 
             tool_calls = self._parse_tool_calls(response)
+
+            if not tool_calls:
+                content = response.get("message", {}).get("content", "")
+                logger.info(f"STEP {step}: direct response, total {int((time.time() - loop_start) * 1000)}ms")
+                return {"direct_response": content, "tool_results": []}
 
             if tool_calls:
                 self._update_tool_history(tool_calls, state)
@@ -415,10 +445,6 @@ class AgentOrchestrator:
                         "tool_results": []
                     }
 
-            if not tool_calls:
-                content = response.get("message", {}).get("content", "")
-                return {"direct_response": content, "tool_results": []}
-
             if self.budget_manager:
                 tool_calls = self.budget_manager.check(tool_calls)
                 if not tool_calls:
@@ -427,29 +453,42 @@ class AgentOrchestrator:
                         "tool_results": []
                     }
 
+            tools_start = time.time()
             tool_results = await self._execute_with_idempotency(tool_calls, state, db_session=db_session)
-            all_tool_results.extend(tool_results)
+            tools_ms = int((time.time() - tools_start) * 1000)
+            logger.info(f"STEP {step}: TOOLS took {tools_ms}ms ({len(tool_results)} results)")
 
             for result in tool_results:
-                if result.success:
+                if result and result.success:
                     state.completed_tools.append(result.tool)
-                else:
-                    state.failed_tools.append(result.tool)
 
             state.last_tool_result_success = all(r.success for r in tool_results)
 
             decision = await self._evaluate_step_v2(tool_results, state, context)
+            eval_ms = int((time.time() - loop_start) * 1000) - llm_ms - tools_ms
+            logger.info(f"STEP {step}: EVAL took {eval_ms}ms, decision={decision}")
+
+            # EARLY EXIT: all tools succeeded and we have results
+            if decision == Decision.STOP and tool_results:
+                all_success = all(r and r.success for r in tool_results)
+                if all_success and step <= 2:
+                    logger.info(f"STEP {step}: early exit (all tools succeeded), total {int((time.time() - loop_start) * 1000)}ms")
+                    break
 
             if decision == Decision.STOP:
                 break
 
             self._add_results_to_context(context, tool_results)
+            # Only compress if context is getting large
+            if len(context) > self.config.context_max_messages + 5:
+                context = self._compress_context_smart(context)
 
-            context = self._compress_context_smart(context)
+            loop_ms = int((time.time() - loop_start) * 1000)
+            logger.info(f"STEP {step}: TOTAL took {loop_ms}ms")
 
         return {
             "direct_response": "",
-            "tool_results": all_tool_results
+            "tool_results": tool_results if step == 1 else state.completed_tools
         }
 
     def _update_tool_history(self, tool_calls: List[Dict], state: RunState):
@@ -461,7 +500,7 @@ class AgentOrchestrator:
                 state.tool_call_counts[name] = state.tool_call_counts.get(name, 0) + 1
 
     # ═══════════════════════════════════════════════════════════════════════
-    # EXECUTION WITH IDEMPOTENCY (FIX 1 & 2 & 7)
+    # TOOL EXECUTION V2 - OPTIMIZED WITH PARALLELIZATION
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _execute_with_idempotency(
@@ -470,12 +509,8 @@ class AgentOrchestrator:
         state: RunState,
         db_session: Any = None
     ) -> List:
-        """
-        Execute tools with:
-        - Idempotency check (FIX 1)
-        - Unique call_id for results (FIX 2)
-        - Exponential backoff (FIX 7)
-        """
+        """Optimized tool execution with parallelization for safe tools."""
+        
         event_logger = None
         if db_session and state.run_id:
             try:
@@ -483,7 +518,9 @@ class AgentOrchestrator:
             except Exception:
                 pass
 
-        results = []
+        results = [None] * len(tool_calls)
+        to_execute = []
+        indices = []
 
         for i, tc in enumerate(tool_calls):
             tool_name = tc.get("function", {}).get("name", "")
@@ -493,22 +530,40 @@ class AgentOrchestrator:
                 prev = state.executed_calls[call_key]
                 if prev.get("status") == "success":
                     logger.debug(f"Idempotency skip: {tool_name} already executed successfully")
-                    results.append(prev["result"])
+                    results[i] = prev["result"]
                     continue
                 if prev.get("status") == "failed" and tool_name in NO_RETRY_TOOLS:
                     logger.debug(f"Skipping retry for {tool_name} (side-effect tool)")
-                    results.append(prev["result"])
+                    results[i] = prev["result"]
                     continue
 
-            if event_logger:
+            to_execute.append(tc)
+            indices.append(i)
+
+        if not to_execute:
+            return results
+
+        if event_logger:
+            for tc in to_execute:
+                tool_name = tc.get("function", {}).get("name", "")
+                call_key = generate_call_key(tc)
                 event_logger.emit_tool_call(
                     tool_name=tool_name,
                     call_id=call_key,
                     arguments=tc.get("function", {}).get("arguments", {}),
                 )
 
-            result = await self.tool_executor.execute_batch([tc])
-            tool_result = result[0] if result else None
+        batch_results = await asyncio.wait_for(
+                self.tool_executor.execute_batch(to_execute),
+                timeout=float(self.config.tool_timeout)
+            )
+
+        for idx, tool_result in zip(indices, batch_results):
+            tc = tool_calls[idx]
+            tool_name = tc.get("function", {}).get("name", "")
+            call_key = generate_call_key(tc)
+            
+            results[idx] = tool_result
 
             state.executed_calls[call_key] = {
                 "status": "success" if tool_result and tool_result.success else "failed",
@@ -516,23 +571,17 @@ class AgentOrchestrator:
                 "tool_name": tool_name
             }
 
-            if event_logger:
-                result_size = len(str(tool_result.data)) if tool_result and tool_result.data else 0
+            if event_logger and tool_result:
                 event_logger.emit_tool_result(
                     tool_name=tool_name,
                     call_id=call_key,
-                    success=bool(tool_result and tool_result.success),
-                    duration_ms=int(tool_result.metadata.duration_ms) if tool_result and tool_result.metadata else 0,
-                    result_size=result_size,
-                    error=tool_result.error if tool_result and not tool_result.success else None,
+                    success=bool(tool_result.success),
+                    duration_ms=int(tool_result.metadata.duration_ms) if tool_result.metadata else 0,
+                    result_size=len(str(tool_result.data)) if tool_result.data else 0,
+                    error=tool_result.error if not tool_result.success else None,
                 )
 
-            results.append(tool_result)
-
         failed = [(i, r) for i, r in enumerate(results) if r and not r.success]
-
-        if not failed:
-            return results
 
         for idx, result in failed:
             tool_name = tool_calls[idx].get("function", {}).get("name", "")
@@ -552,10 +601,15 @@ class AgentOrchestrator:
             state.total_retries += 1
             state.step_retries += 1
 
-            backoff = 0.5 * (2 ** retry_count)
-            await asyncio.sleep(backoff)
-
-            retry_result = await self.tool_executor.execute_batch([tool_calls[idx]])
+            try:
+                retry_result = await asyncio.wait_for(
+                    self.tool_executor.execute_batch([tool_calls[idx]]),
+                    timeout=float(self.config.retry_timeout)
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Retry timeout for {tool_name} after {self.config.retry_timeout}s")
+                continue
+            
             if retry_result:
                 results[idx] = retry_result[0]
                 state.executed_calls[retry_call_key] = {
@@ -725,12 +779,41 @@ class AgentOrchestrator:
            if not r.success or not data:
                continue
 
+           # ---------- docker
+           if "docker" in tool and isinstance(data, dict):
+               output = data.get("output", data.get("stdout", ""))
+               if not output and isinstance(data, list):
+                   output = "\n".join(str(item) for item in data[:20])
+               if not output:
+                   output = str(data)[:500]
+               truncated = output[:1500] + ("..." if len(output) > 1500 else "")
+               sections.append(
+                   f"🐳 Docker\n\n"
+                   f"```\n{truncated}\n```"
+               )
            # ---------- web response
-           if isinstance(data, dict) and "response" in data:
+           elif isinstance(data, dict) and "response" in data:
                sections.append(
                    f"🌐 Résultat web récupéré\n\n"
                    f"{data['response']}"
                )
+
+           # ---------- web search results
+           elif isinstance(data, dict) and "results" in data:
+               results_list = data.get("results", [])
+               if results_list:
+                   lines = []
+                   for r in results_list[:10]:
+                       title = r.get("title", "No title")
+                       url = r.get("url", "")
+                       snippet = r.get("snippet", "")[:150]
+                       lines.append(f"• **{title}**\n  {snippet}")
+                       if url:
+                           lines.append(f"  🔗 {url}")
+                   sections.append(
+                       f"🔍 Recherche: **{data.get('query', '')}**\n\n"
+                       + "\n\n".join(lines)
+                   )
 
            # ---------- sql rows
            elif isinstance(data, dict) and "rows" in data:
@@ -768,10 +851,13 @@ class AgentOrchestrator:
                    f"{cols}"
                )
 
-           # ---------- files
-           elif isinstance(data, dict) and "files" in data:
-               file_list = data.get("files", data.get("data", {}).get("files", []))
-               count = len(file_list)
+           # ---------- files (including nested in data like NAS results)
+           elif isinstance(data, dict) and ("files" in data or (data.get("data", {}).get("files"))):
+               file_list = data.get("files") or data.get("data", {}).get("files", [])
+               count = len(file_list) or data.get("data", {}).get("total", 0)
+               if not file_list:
+                   sections.append(f"📂 Recherche NAS\n\nAucun résultat trouvé pour cette recherche.")
+                   continue
                lines_out = []
                for f in file_list[:20]:
                    if isinstance(f, dict):
@@ -882,18 +968,42 @@ class AgentOrchestrator:
 
        return "\n\n".join(sections) + final_status
     # ═══════════════════════════════════════════════════════════════════════
-    # LLM CALL
+    # LLM CALL V2 - OPTIMIZED
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None, run_id: str = None) -> Dict:
-        """Call LLM using existing provider layer."""
-        from app.services.llm.provider_factory import provider_factory
-        from app.services.agent_tools.registry import get_registry
-        from app.core.config import settings
+    def _get_provider_and_tools(self, provider_name: Optional[str], selected_tools: Optional[List[str]] = None):
+        """Cache provider and tools for faster access."""
+        provider_key = provider_name or "default"
+        
+        if provider_key not in self._provider_cache:
+            from app.services.llm.provider_factory import provider_factory
+            from app.core.config import settings
+            self._provider_cache[provider_key] = provider_factory.get_provider(
+                provider_name or settings.LLM_PROVIDER
+            )
+        
+        if self._tools_cache is None:
+            self._tools_cache = self.registry.get_all_definitions()
+        
+        tools = self._tools_cache
+        if selected_tools:
+            tool_names_set = set(selected_tools)
+            tools = [t for t in self._tools_cache if t.get("function", {}).get("name") in tool_names_set]
+        
+        return self._provider_cache[provider_key], tools
 
-        provider = provider_factory.get_provider(provider_name or settings.LLM_PROVIDER)
-        registry = get_registry()
-        tools = registry.get_all_definitions()
+    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None, run_id: str = None, selected_tools: Optional[List[str]] = None) -> Dict:
+        """Optimized LLM call with caching and timeout."""
+        from app.core.config import settings
+        from app.observability.event_logger import EventLogger
+
+        provider, tools = self._get_provider_and_tools(provider_name, selected_tools)
+        
+        # Filter to only selected tools if provided
+        if selected_tools and self._tools_cache:
+            tool_names_set = set(selected_tools)
+            tools = [t for t in self._tools_cache if t.get("function", {}).get("name") in tool_names_set]
+            logger.debug(f"Filtered tools from {len(self._tools_cache)} to {len(tools)}: {selected_tools}")
 
         if not model:
             model = settings.LLM_MODEL or "default"
@@ -908,18 +1018,20 @@ class AgentOrchestrator:
                 pass
 
         if event_logger:
-            event_logger.emit_llm_request(
-                model=model,
-                provider=provider_name or settings.LLM_PROVIDER,
-                prompt_length=sum(len(str(m.get("content", ""))) for m in context),
-                tools_count=len(tools),
-            )
+            asyncio.create_task(event_logger.emit_async(
+                event_type=EventType.LLM_REQUEST,
+                event_name="llm_request",
+                payload={"model": model, "provider": provider_name or settings.LLM_PROVIDER, "prompt_length": sum(len(str(m.get("content", ""))) for m in context), "tools_count": len(tools)},
+            ))
 
         try:
-            response = await provider.chat_with_tools(
-                model=model,
-                messages=context,
-                tools=tools
+            response = await asyncio.wait_for(
+                provider.chat_with_tools(
+                    model=model,
+                    messages=context,
+                    tools=tools
+                ),
+                timeout=float(self.config.llm_timeout)
             )
 
             duration_ms = int((time.time() - start_time) * 1000)
@@ -928,31 +1040,38 @@ class AgentOrchestrator:
             except Exception:
                 content = str(response)[:500] if response else ""
             if event_logger:
-                event_logger.emit_llm_response(
-                    model=model,
-                    provider=provider_name or settings.LLM_PROVIDER,
-                    tokens_in=0,
-                    tokens_out=0,
+                asyncio.create_task(event_logger.emit_async(
+                    event_type=EventType.LLM_RESPONSE,
+                    event_name="llm_response",
+                    payload={"model": model, "provider": provider_name or settings.LLM_PROVIDER, "tokens_in": 0, "tokens_out": 0, "response_preview": content[:500] if content else None},
                     duration_ms=duration_ms,
-                    response_preview=content[:500] if content else None,
-                )
+                ))
 
             return response
+        except asyncio.TimeoutError:
+            duration_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"LLM call TIMEOUT after {self.config.llm_timeout}s")
+            if event_logger:
+                asyncio.create_task(event_logger.emit_async(
+                    event_type=EventType.ERROR,
+                    event_name="error::LLMTimeout",
+                    payload={"timeout": self.config.llm_timeout},
+                    duration_ms=duration_ms,
+                    success=False,
+                    error_detail=f"LLM call timed out after {self.config.llm_timeout}s",
+                ))
+            return {"message": {"content": f"LLM timeout after {self.config.llm_timeout}s", "tool_calls": []}}
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             if event_logger:
-                event_logger.emit_error(
-                    error_type="LLMCallError",
-                    error_message=str(e),
-                )
-                event_logger.emit_llm_response(
-                    model=model,
-                    provider=provider_name or settings.LLM_PROVIDER,
-                    tokens_in=0,
-                    tokens_out=0,
+                asyncio.create_task(event_logger.emit_async(
+                    event_type=EventType.ERROR,
+                    event_name="error::LLMCallError",
+                    payload={"error": str(e)[:200]},
                     duration_ms=duration_ms,
-                    response_preview=None,
-                )
+                    success=False,
+                    error_detail=str(e),
+                ))
 
             logger.error(f"LLM call failed: {e}")
             return {"message": {"content": f"Error: {str(e)}", "tool_calls": []}}
