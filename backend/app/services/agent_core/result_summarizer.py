@@ -165,14 +165,10 @@ class ResultSummarizer:
         for e in entries[:self.MAX_LIST_ITEMS]:
             if isinstance(e, dict):
                 name = e.get("name", e.get("table", str(e.get("id", "?"))))
-                schema = e.get("schema", "")
+                kind = e.get("type", "")
                 size = e.get("size", "")
-                if schema and schema != "public":
-                    items.append(f"  - {schema}.{name}" +
-                                 (f" ({size}B)" if size else ""))
-                else:
-                    items.append(f"  - {name}" +
-                                 (f" ({size}B)" if size else ""))
+                items.append(f"  {'📁' if kind == 'dir' else '📄'} {name}" +
+                             (f" ({size}B)" if size else ""))
             else:
                 items.append(f"  - {e}")
         total = data.get("count", data.get("total", len(entries))) if isinstance(data, dict) else len(entries)

@@ -554,66 +554,162 @@ class AgentOrchestrator:
     # SYNTHESIS
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def synthesize(
-        self,
-        tool_results: List,
-        direct_response: str,
-        state: RunState
-    ) -> str:
-        """Simple local synthesis - returns raw formatted results."""
-        if not tool_results and direct_response:
-            return direct_response
+   async def synthesize(
+       self,
+       tool_results: List,
+       direct_response: str,
+       state: RunState
+   ) -> str:
+       """Telegram-style natural synthesis."""
 
-        if not tool_results and not direct_response:
-            return "No results available."
+       sections = []
 
-        lines = []
+       # intro
+       if direct_response and direct_response.strip():
+           sections.append(
+               f"🤖 {direct_response.strip()}"
+           )
 
-        if direct_response and direct_response.strip():
-            lines.append(direct_response.strip())
+       if not tool_results and not direct_response:
+           return (
+               "⚠️ Je n’ai trouvé aucun résultat.\n\n"
+               "Réessaie avec une autre requête."
+           )
 
-        if tool_results:
-            for r in tool_results:
-                if not r:
-                    continue
+       for r in tool_results:
+           if not r:
+               continue
 
-                tool_name = getattr(r, 'tool', 'unknown')
-                data = getattr(r, 'data', None)
-                error = getattr(r, 'error', None)
+           tool = getattr(r, "tool", "unknown")
+           data = getattr(r, "data", None)
+           error = getattr(r, "error", None)
 
-                if r.success and data:
-                    if isinstance(data, dict):
-                        if "response" in data:
-                            lines.append(f"**{tool_name}:** {data['response'][:300]}")
-                        elif "rows" in data and data["rows"]:
-                            lines.append(f"**{tool_name} results:**")
-                            for row in data["rows"][:5]:
-                                lines.append(f"  • {row}")
-                        elif "tables" in data and data["tables"]:
-                            lines.append(f"**Tables ({len(data['tables'])}):**")
-                            for t in data["tables"][:5]:
-                                lines.append(f"  • {t.get('schema', 'public')}.{t.get('name')}")
-                        elif "columns" in data and data["columns"]:
-                            lines.append(f"**{data.get('table', tool_name)} columns:**")
-                            for col in data["columns"][:10]:
-                                lines.append(f"  • {col.get('name')} ({col.get('type')})")
-                        elif "shares" in data and data["shares"]:
-                            lines.append(f"**NAS Shares:**")
-                            for s in data["shares"][:5]:
-                                lines.append(f"  • {s.get('name', 'unknown')}")
-                        elif "files" in data and data["files"]:
-                            lines.append(f"**Files ({len(data['files'])}):**")
-                            for f in data["files"][:10]:
-                                lines.append(f"  • {f}")
-                        else:
-                            lines.append(f"**{tool_name}:** {str(data)[:200]}")
-                    else:
-                        lines.append(f"**{tool_name}:** {str(data)[:200]}")
-                elif error:
-                    lines.append(f"**{tool_name} error:** {error}")
+           # ---------------- errors
+           if error:
+               sections.append(
+                   f"⚠️ Petit souci avec **{tool}**\n\n"
+                   f"`{error}`"
+               )
+               continue
 
-        return "\n".join(lines)
+           if not r.success or not data:
+               continue
 
+           # ---------- web response
+           if isinstance(data, dict) and "response" in data:
+               sections.append(
+                   f"🌐 Résultat web récupéré\n\n"
+                   f"{data['response']}"
+               )
+
+           # ---------- sql rows
+           elif isinstance(data, dict) and "rows" in data:
+               rows = "\n".join(f"• {row}" for row in data["rows"])
+
+               sections.append(
+                   f"🗄️ Requête SQL exécutée\n\n"
+                   f"Voici les résultats trouvés 👇\n\n"
+                   f"{rows}"
+               )
+
+           # ---------- tables
+           elif isinstance(data, dict) and "tables" in data:
+               tables = "\n".join(
+                   f"• {t.get('schema','public')}.{t.get('name')}"
+                   for t in data["tables"]
+               )
+
+               sections.append(
+                   f"🗂️ Tables détectées\n\n"
+                   f"J’ai trouvé **{len(data['tables'])}** tables :\n\n"
+                   f"{tables}"
+               )
+
+           # ---------- columns
+           elif isinstance(data, dict) and "columns" in data:
+               cols = "\n".join(
+                   f"• {c['name']} ({c['type']})"
+                   for c in data["columns"]
+               )
+
+               sections.append(
+                   f"📋 Structure de table\n\n"
+                   f"Colonnes de `{data.get('table', tool)}` :\n\n"
+                   f"{cols}"
+               )
+
+           # ---------- files
+           elif isinstance(data, dict) and "files" in data:
+               files = "\n".join(f"• {f}" for f in data["files"])
+
+               sections.append(
+                   f"📂 Fichiers trouvés\n\n"
+                   f"J’ai trouvé **{len(data['files'])}** fichiers :\n\n"
+                   f"{files}"
+               )
+
+           # ---------- file content
+           elif tool == "read_file":
+               sections.append(
+                   f"📄 Contenu du fichier\n\n"
+                   f"Voilà ce que j’ai lu 👇\n\n"
+                   f"```text\n{data}\n```"
+               )
+
+           # ---------- docker
+           elif "docker" in tool:
+               sections.append(
+                   f"🐳 Docker\n\n"
+                   f"Commande exécutée avec succès.\n\n"
+                   f"```text\n{data}\n```"
+               )
+
+           # ---------- bash
+           elif tool == "bash":
+               sections.append(
+                   f"💻 Commande terminal\n\n"
+                   f"Résultat :\n\n"
+                   f"```text\n{data}\n```"
+               )
+
+           # ---------- nas
+           elif isinstance(data, dict) and "shares" in data:
+               shares = "\n".join(
+                   f"• {s.get('name','unknown')}"
+                   for s in data["shares"]
+               )
+
+               sections.append(
+                   f"💾 NAS\n\n"
+                   f"Partages disponibles :\n\n"
+                   f"{shares}"
+               )
+
+           # ---------- fallback dict
+           elif isinstance(data, dict):
+               pretty = "\n".join(
+                   f"• {k}: {v}"
+                   for k, v in data.items()
+               )
+
+               sections.append(
+                   f"🔧 Résultat de `{tool}`\n\n"
+                   f"{pretty}"
+               )
+
+           # ---------- fallback
+           else:
+               sections.append(
+                   f"📌 Résultat\n\n"
+                   f"{data}"
+               )
+
+       final_status = (
+           "\n\n━━━━━━━━━━━━━━\n"
+           "✅ Terminé avec succès"
+       )
+
+       return "\n\n".join(sections) + final_status
     # ═══════════════════════════════════════════════════════════════════════
     # LLM CALL
     # ═══════════════════════════════════════════════════════════════════════
