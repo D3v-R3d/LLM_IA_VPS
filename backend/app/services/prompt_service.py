@@ -109,6 +109,15 @@ class PromptService:
             return "Summarize the conversation briefly."
 
     @staticmethod
+    def get_planning_prompt() -> str:
+        try:
+            path = os.path.join(settings.PROMPT_DIR, "inject", "planning.md")
+            with open(path, "r") as f:
+                return f.read()
+        except Exception:
+            return "You are a task planner. Break down the user request into a structured plan."
+
+    @staticmethod
     def write_context_summary(summary: str):
         from datetime import datetime
         try:

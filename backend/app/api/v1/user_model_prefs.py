@@ -20,9 +20,9 @@ user_service = UserService()
 
 
 class ModelPrefsCreate(BaseModel):
-    provider: str = "google"
-    model: str = "gemma-4-31b-it"
-    is_local: bool = False
+    provider: str = "ollama"
+    model: str = "gemma4:31b"
+    is_local: bool = True
     embedding_model: Optional[str] = "nomic-embed-text"
 
 
@@ -49,9 +49,9 @@ def get_model_prefs(
     prefs = user.model_prefs
     if not prefs:
         return ModelPrefsResponse(
-            provider="google",
-            model="gemma-4-31b-it",
-            is_local=False,
+            provider="ollama",
+            model="gemma4:31b",
+            is_local=True,
             embedding_model="nomic-embed-text"
         )
 

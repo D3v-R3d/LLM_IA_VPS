@@ -46,7 +46,7 @@ class ToolRegistry:
         )
         from app.services.agent_tools.tools.database import (
             PostgresQueryReadTool, PostgresQueryWriteTool,
-            PostgresQueryTool, PostgresListTablesTool, PostgresDescribeTableTool
+            PostgresListTablesTool, PostgresDescribeTableTool
         )
         from app.services.agent_tools.tools.communication import (
             TelegramSendMessageTool, TelegramSendNotificationTool,
@@ -83,7 +83,6 @@ class ToolRegistry:
             APIFetchTool(),
             PostgresQueryReadTool(),
             PostgresQueryWriteTool(),
-            PostgresQueryTool(),  # Deprecated
             PostgresListTablesTool(),
             PostgresDescribeTableTool(),
             TelegramSendMessageTool(),
@@ -105,8 +104,9 @@ class ToolRegistry:
         for tool in tools:
             self.register(tool)
 
-    def register(self, tool: BaseTool) -> None:
-        """Register a tool."""
+    def register(self, tool: BaseTool):
+        if tool.name in self._tools:
+            raise ValueError(f"Duplicate tool: {tool.name}")
         self._tools[tool.name] = tool
         self._tool_names.append(tool.name)
 

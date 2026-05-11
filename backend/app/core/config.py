@@ -31,8 +31,8 @@ class Settings:
         self.QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
         self.OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
         self.OLLAMA_CLOUD_HOST = os.environ.get("OLLAMA_CLOUD_HOST", "https://ollama.com")
-        self.LLM_MODEL = os.environ.get("LLM_MODEL", "")
-        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "")
+        self.LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:31b")
+        self.OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:31b")
 
         self.OLLAMA_API_KEY = (
             os.environ.get("OLLAMA_API_KEY") or
@@ -54,7 +54,7 @@ class Settings:
             os.environ.get("OPENROUTER_API_KEY") or
             _read_secret_file(os.environ.get("OPENROUTER_API_KEY_FILE", ""))
         )
-        self.LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "google")
+        self.LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama")
         self.TELEGRAM_BOT_TOKEN = (
             os.environ.get("TELEGRAM_BOT_TOKEN") or
             _read_secret_file(os.environ.get("TELEGRAM_BOT_TOKEN_FILE", ""))

@@ -111,7 +111,7 @@ class MessagePipeline:
                 context = self._build_context(db)
                 logger.info(f"Context built for chat_id={update.chat_id}")
                 response = await self._router.route(update, context)
-                logger.info(f"Route completed for chat_id={update.chat_id}, response={'yes' if response else 'none'}")
+                logger.info(f"Route completed for chat_id={update.chat_id}, response={response[:50] if response else 'none'}")
 
                 if response:
                     logger.info(f"Sending response for chat_id={update.chat_id}")

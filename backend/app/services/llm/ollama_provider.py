@@ -7,6 +7,7 @@ Tool formatting delegated to OllamaAdapter (which reuses OpenAIAdapter).
 """
 
 from typing import List, Dict, Any, Optional
+import os
 import httpx
 import logging
 
@@ -29,7 +30,13 @@ class OllamaProvider(LLMProvider):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None
     ):
-        self.base_url = (base_url or settings.OLLAMA_HOST).rstrip("/")
+        use_cloud = os.environ.get("OLLAMA_USE_CLOUD", "false").lower() == "true"
+        if base_url:
+            self.base_url = base_url.rstrip("/")
+        elif use_cloud:
+            self.base_url = settings.OLLAMA_CLOUD_HOST.rstrip("/")
+        else:
+            self.base_url = settings.OLLAMA_HOST.rstrip("/")
         self.api_key = api_key or settings.OLLAMA_API_KEY
         self._client = httpx.AsyncClient(timeout=180.0)
         self._adapter = OllamaAdapter()

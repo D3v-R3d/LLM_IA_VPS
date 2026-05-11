@@ -163,59 +163,10 @@ class AgentOrchestrator:
     # ═══════════════════════════════════════════════════════════════════════
 
     def intent_classification(self, message: str) -> Dict:
-        """Heuristic scoring - NO LLM call."""
-        msg_lower = message.lower()
-        complexity = 1
-        intent = "general"
-        confidence = 0.5
+        from app.services.agent_core.intent_classifier import classify_message
+        return classify_message(message)
 
-        multi_step_words = ["then", "after", "ensuite", "et puis", "plus", "also"]
-        action_verbs = ["analyze", "compare", "debug", "plan", "create", "build", "find", "search", "check", "implement", "refactor", "fix", "test"]
-
-        conjunction_count = sum(1 for word in multi_step_words if word in msg_lower)
-        verb_count = sum(1 for verb in action_verbs if verb in msg_lower)
-
-        complexity = 1 + conjunction_count + verb_count
-
-        if len(message) > 200:
-            complexity += 1
-
-        complexity = min(complexity, 5)
-
-        if any(w in msg_lower for w in ["file", "directory", "folder", "list", "read", "write"]):
-            intent = "file_operation"
-            confidence = 0.9
-        elif any(w in msg_lower for w in ["search", "find", "google", "web"]):
-            intent = "web_search"
-            confidence = 0.85
-        elif any(w in msg_lower for w in ["execute", "run", "command", "bash"]):
-            intent = "code_execution"
-            confidence = 0.8
-        elif any(w in msg_lower for w in ["docker", "container"]):
-            intent = "docker"
-            confidence = 0.9
-        elif any(w in msg_lower for w in ["database", "sql", "query"]):
-            intent = "database"
-            confidence = 0.85
-        else:
-            intent = "general"
-            confidence = 0.5
-
-        return {"complexity": complexity, "intent": intent, "confidence": confidence}
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # PLANNING SYSTEM (FIX 4: JSON parsing)
-    # ═══════════════════════════════════════════════════════════════════════
-
-    async def plan(self, message: str, complexity: int) -> Optional[Plan]:
-        """HYBRID planning: lightweight for complexity 3, LLM for 4-5."""
-        if complexity < self.config.complexity_threshold:
-            return None
-
-        if complexity == 3:
-            return self._lightweight_plan(message)
-        else:
-            return await self._llm_plan(message)
+    # _pack removed — logic now lives in intent_classifier.classify_message
 
     def _lightweight_plan(self, message: str) -> Plan:
         """Simple heuristic - split by conjunctions."""
@@ -250,24 +201,25 @@ class AgentOrchestrator:
 
         return Plan(steps=steps, expected_tools=expected_tools)
 
+    async def plan(self, message: str, complexity: int) -> Optional[Plan]:
+        """Generate a plan based on message complexity."""
+        if complexity >= 4:
+            return await self._llm_plan(message)
+        return self._lightweight_plan(message)
+
     async def _llm_plan(self, message: str) -> Optional[Plan]:
         """LLM-based structured planning for complexity 4-5 with strict JSON validation."""
         from app.services.llm.provider_factory import provider_factory
         from app.services.agent_tools.registry import get_registry
         from app.core.config import settings
 
-        planning_prompt = f"""You are a task planner. Given the user request, break it down into a structured plan.
+        from app.services.prompt_service import PromptService
+        from app.services.agent_core.intent_classifier import select_tools_for_message
 
-User request: {message}
+        tools_list = ", ".join(select_tools_for_message(message)) if message else "none"
 
-Respond ONLY with a JSON object in this exact format:
-{{
-  "steps": ["step 1 description", "step 2 description"],
-  "tools": ["tool1", "tool2"],
-  "reasoning": "brief explanation of the plan"
-}}
-
-Do not include any other text. The response must be valid JSON."""
+        planning_template = PromptService.get_planning_prompt()
+        planning_prompt = planning_template.format(message=message, available_tools=tools_list)
 
         try:
             provider = provider_factory.get_provider(settings.LLM_PROVIDER)

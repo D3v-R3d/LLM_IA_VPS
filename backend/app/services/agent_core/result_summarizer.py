@@ -16,31 +16,56 @@ logger = logging.getLogger(__name__)
 class ResultSummarizer:
     """Generate LLM-friendly summaries from tool results."""
 
-    MAX_SUMMARY_CHARS = 1200
-    MAX_LIST_ITEMS = 5
+    MAX_SUMMARY_CHARS = 5000
+    MAX_LIST_ITEMS = 25
+
+    HANDLERS = {
+        "read_file": "_file_summary",
+        "write_file": "_write_summary",
+        "edit_file": "_edit_summary",
+        "glob": "_glob_summary",
+        "grep": "_grep_summary",
+        "ls": "_list_summary",
+
+        "web_search": "_search_summary",
+        "web_fetch": "_web_fetch_summary",
+        "api_fetch": "_web_fetch_summary",
+
+        "bash": "_bash_summary",
+        "docker": "_docker_summary",
+        "git": "_git_summary",
+        "pkill": "_bash_summary",
+
+        "postgres_query_read": "_query_summary",
+        "postgres_query_write": "_query_summary",
+        "postgres_list_tables": "_list_summary",
+        "postgres_describe_table": "_describe_summary",
+
+        "telegram_send_message": "_default_summary",
+        "telegram_send_notification": "_default_summary",
+        "telegram_get_user_info": "_default_summary",
+        "telegram_bot_health": "_default_summary",
+
+        "user_write_notes": "_default_summary",
+
+        "scrape_and_store": "_default_summary",
+        "search_stored_content": "_search_summary",
+
+        "qdrant_search": "_search_summary",
+
+        "nas_list_share": "_list_summary",
+        "nas_list_folder": "_list_summary",
+        "nas_search": "_search_summary",
+
+        "model_switch": "_default_summary",
+    }
 
     def summarize(self, tool_name: str, response: ToolResponse) -> str:
         if not response.success:
             return self._error_summary(response)
 
-        handlers = {
-            "read_file": self._file_summary,
-            "write_file": self._write_summary,
-            "edit_file": self._edit_summary,
-            "glob": self._glob_summary,
-            "grep": self._grep_summary,
-            "ls": self._list_summary,
-            "web_search": self._search_summary,
-            "web_fetch": self._web_fetch_summary,
-            "bash": self._bash_summary,
-            "docker": self._docker_summary,
-            "git": self._git_summary,
-            "postgres_query": self._query_summary,
-            "postgres_list_tables": self._list_summary,
-            "postgres_describe_table": self._describe_summary,
-        }
-
-        handler = handlers.get(tool_name, self._default_summary)
+        handler_name = self.HANDLERS.get(tool_name, "_default_summary")
+        handler = getattr(self, handler_name)
         return handler(response)
 
     def _error_summary(self, response: ToolResponse) -> str:
@@ -140,10 +165,14 @@ class ResultSummarizer:
         for e in entries[:self.MAX_LIST_ITEMS]:
             if isinstance(e, dict):
                 name = e.get("name", e.get("table", str(e.get("id", "?"))))
-                kind = e.get("type", "")
+                schema = e.get("schema", "")
                 size = e.get("size", "")
-                items.append(f"  {'📁' if kind == 'dir' else '📄'} {name}" +
-                             (f" ({size}B)" if size else ""))
+                if schema and schema != "public":
+                    items.append(f"  - {schema}.{name}" +
+                                 (f" ({size}B)" if size else ""))
+                else:
+                    items.append(f"  - {name}" +
+                                 (f" ({size}B)" if size else ""))
             else:
                 items.append(f"  - {e}")
         total = data.get("count", data.get("total", len(entries))) if isinstance(data, dict) else len(entries)
@@ -169,6 +198,14 @@ class ResultSummarizer:
 
     def _git_summary(self, response: ToolResponse) -> str:
         return self._bash_summary(response)
+
+    def validate_handlers(self, registry):
+        missing = [
+            t.name for t in registry.get_all()
+            if t.name not in self.HANDLERS
+        ]
+        if missing:
+            logger.warning(f"Missing summarizers: {missing}")
 
     def _query_summary(self, response: ToolResponse) -> str:
         data = response.data or {}

@@ -29,8 +29,8 @@ TOOL_METADATA = {
     "pkill": {"parallelizable": False, "dangerous": True},
     "postgres_describe_table": {"parallelizable": True, "dangerous": False},
     "postgres_list_tables": {"parallelizable": True, "dangerous": False},
-    "postgres_query": {"parallelizable": False, "dangerous": True},
-    "read_file": {"parallelizable": True, "dangerous": False},
+    "postgres_query_read": {"parallelizable": False, "dangerous": False},
+    "postgres_query_write": {"parallelizable": False, "dangerous": True},    "read_file": {"parallelizable": True, "dangerous": False},
     "scrape_and_store": {"parallelizable": True, "dangerous": False},
     "search_stored_content": {"parallelizable": True, "dangerous": False},
     "telegram_bot_health": {"parallelizable": True, "dangerous": False},
@@ -64,6 +64,7 @@ class ToolExecutor:
         self.default_timeout = default_timeout
         self.max_tools_per_batch = max_tools_per_batch
         self._summarizer = ResultSummarizer()
+        self._summarizer.validate_handlers(registry)
 
     async def execute_batch(
         self,
@@ -183,7 +184,13 @@ class ToolExecutor:
     async def _execute(self, tool_name: str, arguments: Dict) -> ToolResult:
         import json
         if isinstance(arguments, str):
-            arguments = json.loads(arguments)
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                # If arguments is a string but not valid JSON, treat it as empty dict
+                # This can happen when LLM returns malformed JSON
+                logger.warning(f"Failed to parse tool arguments as JSON for {tool_name}: {arguments}")
+                arguments = {}
         # Fix common LLM type errors: string numbers -> int
         fixed = {}
         for k, v in arguments.items():

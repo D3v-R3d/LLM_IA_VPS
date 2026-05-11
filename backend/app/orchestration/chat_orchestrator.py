@@ -174,7 +174,7 @@ class ChatOrchestrator:
         model: Optional[str] = None
     ) -> str:
         """Synthesize response using LLM for natural language."""
-        if not response or len(response) < 100:
+        if not response or len(response) < 20:
             return response
 
         from app.services.llm.provider_factory import provider_factory
@@ -194,12 +194,16 @@ class ChatOrchestrator:
         try:
             if provider == "openrouter":
                 llm_response = await llm_provider.chat(
-                    model=model or "openai/gpt-4",
+                    model=model or "openai/gpt-oss-120b:free",
                     messages=synthesis_prompt,
                     options={"max_tokens": 5000}
                 )
             else:
-                llm_response = await llm_provider.chat(synthesis_prompt, max_tokens=500)
+                llm_response = await llm_provider.chat(
+                    model=model or "gemma4:31b",
+                    messages=synthesis_prompt,
+                    options={"max_tokens": 2000}
+                )
 
             if llm_response and llm_response.get("content"):
                 return llm_response["content"]

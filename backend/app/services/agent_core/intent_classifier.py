@@ -6,7 +6,7 @@ No LLM calls needed — fast, deterministic, lightweight.
 """
 
 import re
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 INTENT_PATTERNS: Dict[str, List[str]] = {
     "file_operation": [
@@ -107,7 +107,7 @@ INTENT_TO_TOOLS: Dict[str, Set[str]] = {
     "code_execution": {"bash", "git", "docker"},
     "docker": {"docker"},
     "git": {"git"},
-    "database": {"postgres_query", "postgres_list_tables", "postgres_describe_table"},
+    "database": {"postgres_query_read", "postgres_query_write", "postgres_list_tables", "postgres_describe_table"},
     "nas": {"nas_list_share", "nas_list_folder", "nas_search"},
     "telegram": {"telegram_send_message", "telegram_send_notification",
                  "telegram_get_user_info", "telegram_bot_health"},
@@ -116,9 +116,27 @@ INTENT_TO_TOOLS: Dict[str, Set[str]] = {
     "conversation": set(),
 }
 
+# Mapping intent → primary tool name for backward compatibility
+INTENT_TO_PRIMARY_TOOL: Dict[str, Optional[str]] = {
+    "calculator": "calculator",
+    "weather": "weather",
+    "time": "time_tool",
+    "web_fetch": "web_fetch",
+    "file_operation": "read_file",
+    "database": "postgres_query_read",
+    "docker": "docker_exec",
+    "code_execution": "bash",
+    "git": "git",
+    "nas": "nas_list_share",
+    "telegram": "telegram_send_message",
+    "search_stored": "search_stored_content",
+    "conversation": None,
+    "general_chat": None,
+}
+
 
 def classify_intent(user_message: str) -> List[str]:
-    """Classify user intent based on keyword matching with word boundaries.
+    """Classify user intent based on keyword matching with word boundary matching.
 
     Returns list of matched intent names, ordered by match confidence.
     Always includes 'conversation' as fallback.
@@ -134,19 +152,14 @@ def classify_intent(user_message: str) -> List[str]:
                 if re.search(pattern, msg_lower):
                     score += 1
             except re.error:
-                # Fallback to simple match if regex is invalid
                 if pattern in msg_lower:
                     score += 1
         if score > 0:
             scores[intent] = score
 
-    # Sort by score descending
     sorted_intents = sorted(scores.keys(), key=lambda i: scores[i], reverse=True)
-
-    # Keep top 3 intents max
     matched = sorted_intents[:3]
 
-    # Always include conversation as fallback
     if not matched:
         matched.append("conversation")
 
@@ -154,18 +167,13 @@ def classify_intent(user_message: str) -> List[str]:
 
 
 def select_tools(intents: List[str]) -> List[str]:
-    """Select tool names based on classified intents.
-
-    Always includes ALWAYS_INCLUDE tools UNLESS the ONLY intent is 'conversation'.
-    Returns deduplicated list of tool names.
-    """
+    """Select tool names based on classified intents."""
     tool_names: Set[str] = set()
 
     for intent in intents:
         tools = INTENT_TO_TOOLS.get(intent, set())
         tool_names.update(tools)
 
-    # Only add always-include tools if there's a non-conversation intent
     non_conversation = [i for i in intents if i != "conversation"]
     if non_conversation:
         tool_names.update(ALWAYS_INCLUDE)
@@ -177,3 +185,42 @@ def select_tools_for_message(user_message: str) -> List[str]:
     """One-shot: classify intent and select tools for a message."""
     intents = classify_intent(user_message)
     return select_tools(intents)
+
+
+def classify_message(user_message: str) -> Dict:
+    """Full intent classification returning intent, tool, confidence, and complexity.
+
+    Used by the orchestrator for routing decisions.
+    """
+    msg = user_message.strip().lower()
+
+    # ── Hard routing fast paths ──────────────────────────
+    if re.search(r"\d+\s*[\+\-\*\/]\s*\d+", msg):
+        return {"intent": "calculator", "tool": "calculator", "confidence": 0.99, "complexity": 1}
+
+    if any(x in msg for x in ["weather", "météo", "temperature", "forecast"]):
+        return {"intent": "weather", "tool": "weather", "confidence": 0.97, "complexity": 1}
+
+    if any(x in msg for x in ["time", "heure", "date", "today"]):
+        return {"intent": "time", "tool": "time_tool", "confidence": 0.96, "complexity": 1}
+
+    # ── Keyword-based classification ─────────────────────
+    intents = classify_intent(user_message)
+
+    primary_intent = intents[0] if intents else "conversation"
+    mapped_intent = primary_intent if primary_intent != "conversation" else "general_chat"
+
+    primary_tool = INTENT_TO_PRIMARY_TOOL.get(primary_intent)
+    if primary_tool is None and intents:
+        tools = select_tools(intents)
+        primary_tool = tools[0] if tools else None
+
+    confidence = 0.8 if primary_intent != "conversation" else 0.55
+    complexity = min(len(intents) + 1, 5)
+
+    return {
+        "intent": mapped_intent,
+        "tool": primary_tool,
+        "confidence": confidence,
+        "complexity": complexity,
+    }

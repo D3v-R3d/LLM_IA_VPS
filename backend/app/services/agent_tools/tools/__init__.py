@@ -11,8 +11,6 @@ Model tools: model_switch
 NAS tools: nas_list_share, nas_list_folder, nas_search
 Scraper tools: scrape_and_store, search_stored_content
 Utils tools: user_write_notes
-
-Services: WebSearchService, URLFetchService, APICallerService
 """
 
 from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
@@ -29,7 +27,7 @@ from app.services.agent_tools.tools.web import (
 )
 from app.services.agent_tools.tools.database import (
     PostgresQueryReadTool, PostgresQueryWriteTool,
-    PostgresQueryTool, PostgresListTablesTool, PostgresDescribeTableTool
+     PostgresListTablesTool, PostgresDescribeTableTool
 )
 from app.services.agent_tools.tools.communication import (
     TelegramSendMessageTool, TelegramSendNotificationTool,
@@ -48,10 +46,6 @@ from app.services.agent_tools.tools.utils import (
     UserNotesTool
 )
 
-from app.services.agent_tools.tools.web.web_search import WebSearchService
-from app.services.agent_tools.tools.web.web_fetch import URLFetchService
-from app.services.agent_tools.tools.web.api_call import APICallerService
-
 try:
     from app.services.agent_tools.tools.model import ModelSwitchTool
 except ImportError:
@@ -63,14 +57,13 @@ __all__ = [
     "BashTool", "DockerTool", "GitTool", "PkillTool",
     "WebFetchTool", "WebSearchTool", "APIFetchTool",
     "PostgresQueryReadTool", "PostgresQueryWriteTool",
-    "PostgresQueryTool", "PostgresListTablesTool", "PostgresDescribeTableTool",
+    "PostgresListTablesTool", "PostgresDescribeTableTool",
     "TelegramSendMessageTool", "TelegramSendNotificationTool",
     "TelegramGetUserInfoTool", "TelegramBotHealthTool",
     "QdrantSearchTool",
     "NasListShareTool", "NasListFolderTool", "NasSearchTool",
     "ScrapeAndStoreTool", "SearchStoredContentTool",
     "UserNotesTool",
-    "WebSearchService", "URLFetchService", "APICallerService"
 ]
 
 if ModelSwitchTool is not None:

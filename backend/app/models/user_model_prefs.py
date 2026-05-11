@@ -12,8 +12,8 @@ class UserModelPrefs(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    provider = Column(String(50), nullable=False, default="google")
-    model = Column(String(100), nullable=False, default="gemma-4-31b-it")
+    provider = Column(String(50), nullable=False, default="ollama")
+    model = Column(String(100), nullable=False, default="gemma4:31b")
     is_local = Column(Boolean, nullable=False, default=True)
     current_session = Column(String(100), nullable=True, doc="Current conversation session ID")
     embedding_model = Column(String(100), nullable=True, default="nomic-embed-text")

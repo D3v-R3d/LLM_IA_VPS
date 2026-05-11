@@ -12,7 +12,6 @@ Tools:
 from app.services.agent_tools.tools.database.postgres import (
     PostgresQueryReadTool,
     PostgresQueryWriteTool,
-    PostgresQueryTool,
     PostgresListTablesTool,
     PostgresDescribeTableTool
 )
@@ -20,7 +19,6 @@ from app.services.agent_tools.tools.database.postgres import (
 __all__ = [
     "PostgresQueryReadTool",
     "PostgresQueryWriteTool",
-    "PostgresQueryTool",
     "PostgresListTablesTool",
     "PostgresDescribeTableTool",
 ]

@@ -70,15 +70,15 @@ class ContextCompressionService:
 
         # Get model and provider from user's preferences
         user_id = conversation.user_id if hasattr(conversation, 'user_id') else None
-        model_name = "gemma-4-31b-it"
-        provider_name = "google"
-        
+        model_name = "gemma4:31b"
+        provider_name = "ollama"
+
         if user_id and db:
             from app.models.user_model_prefs import UserModelPrefs
             user_prefs = db.query(UserModelPrefs).filter(UserModelPrefs.user_id == user_id).first()
             if user_prefs:
-                model_name = user_prefs.model or "gemma-4-31b-it"
-                provider_name = user_prefs.provider or "google"
+                model_name = user_prefs.model or "gemma4:31b"
+                provider_name = user_prefs.provider or "ollama"
         
         provider = provider_factory.get_provider(provider_name)
         summary = ""
