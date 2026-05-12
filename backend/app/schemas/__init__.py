@@ -34,3 +34,14 @@ from app.schemas.embedding import (
     SearchSimilarResponse,
     SearchResultItem,
 )
+from app.schemas.user_model_prefs import (
+    UserModelPrefsBase,
+    UserModelPrefsCreate,
+    UserModelPrefsUpdate,
+    UserModelPrefsResponse,
+)
+from app.schemas.agent_event import (
+    AgentEventBase,
+    AgentEventCreate,
+    AgentEventResponse,
+)

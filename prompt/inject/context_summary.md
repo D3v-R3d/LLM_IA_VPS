@@ -1,7 +1,4 @@
 # Résumé de Conversation
 
 <!-- Summary will be injected here -->
-[2026-05-12T12:08:45.501135] **Utilisateur** — Parle français, cherche un film sur son NAS (initialement "Avengers").  
-**Sujets** — Recherche de fichiers vidéo, exploration des dossiers NAS (PlexMediaServer, Storage, etc.), tests de l’assistant et erreurs techniques récurrentes.  
-**Conclusions** — Aucun fichier vidéo ou film trouvé lors des recherches ; l’utilisateur n’a pas encore exploré le dossier `/Storage/Video`.  
-**Contexte** — L’assistant a listé les partages disponibles (8 dossiers) mais n’a pas accédé au sous-dossier `Video` de `/Storage`. Les bugs techniques (timeout, erreurs de configuration) ont perturbé la session.
+[2026-05-12T12:09:45.454869] L'utilisateur, francophone, a cherché à plusieurs reprises des fichiers spécifiques sur son NAS (film « Avengers », fichier .txt, « bulletin ») sans succès (résultats vides). L'assistant a listé les partages et dossiers disponibles, mais l'utilisateur a reproché de ne pas répondre à sa question. Des erreurs techniques (timeout, bug de configuration) sont survenues en cours de conversation. Aucune décision ou action concrète n'a été prise ; la dernière demande d'exploration pour trouver un film est restée sans réponse. Pour continuer, il faudrait explorer le dossier `/Storage/Video` ou effectuer une recherche plus large.
