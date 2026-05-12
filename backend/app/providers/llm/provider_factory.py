@@ -8,12 +8,7 @@ Supports Ollama, Groq, and other providers via the LLMProvider interface.
 from typing import Optional, Dict
 from app.core.config import settings
 
-from app.services.llm.llm_provider import LLMProvider
-from app.services.llm.ollama_provider import OllamaProvider
-from app.services.llm.groq_provider import GroqProvider
-from app.services.llm.google_provider import GoogleProvider
-from app.services.llm.anthropic_provider import AnthropicProvider
-from app.services.llm.openrouter_provider import OpenRouterProvider
+from app.providers.llm.llm_provider import LLMProvider
 
 
 class LLMProviderFactory:
@@ -51,14 +46,19 @@ class LLMProviderFactory:
     def _create_provider(cls, name: str) -> LLMProvider:
         """Create a new provider instance."""
         if name == "ollama":
+            from app.providers.llm.ollama_provider import OllamaProvider
             return OllamaProvider()
         elif name == "groq":
+            from app.providers.llm.groq_provider import GroqProvider
             return GroqProvider()
         elif name == "google":
+            from app.providers.llm.google_provider import GoogleProvider
             return GoogleProvider()
         elif name == "anthropic":
+            from app.providers.llm.anthropic_provider import AnthropicProvider
             return AnthropicProvider()
         elif name == "openrouter":
+            from app.providers.llm.openrouter_provider import OpenRouterProvider
             return OpenRouterProvider(api_key=settings.OPENROUTER_API_KEY)
         else:
             raise ValueError(f"Unknown provider: {name}. Available: ollama, groq, google, anthropic, openrouter")

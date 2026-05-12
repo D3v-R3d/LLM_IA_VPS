@@ -5,7 +5,7 @@ Endpoints for managing LLM providers (Ollama, Groq, etc.)
 """
 
 from fastapi import APIRouter, HTTPException
-from app.services.llm.provider_factory import provider_factory
+from app.providers.llm.provider_factory import provider_factory
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 

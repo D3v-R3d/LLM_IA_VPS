@@ -282,7 +282,7 @@ class AgentOrchestrator:
     async def _llm_plan(self, message: str, event_logger=None) -> Optional[Plan]:
         """LLM-based structured planning for complexity 4-5 with strict JSON validation."""
 
-        from app.services.llm.provider_factory import provider_factory
+        from app.providers.llm.provider_factory import provider_factory
         from app.core.config import settings
         from app.services.prompt_service import PromptService
         from app.services.agent_core.tool_router import route as route_tools
@@ -1071,7 +1071,7 @@ class AgentOrchestrator:
         provider_key = provider_name or "default"
 
         if provider_key not in self._provider_cache:
-            from app.services.llm.provider_factory import provider_factory
+            from app.providers.llm.provider_factory import provider_factory
             from app.core.config import settings
             self._provider_cache[provider_key] = provider_factory.get_provider(
                 provider_name or settings.LLM_PROVIDER

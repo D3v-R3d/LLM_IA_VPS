@@ -1,9 +1,7 @@
 """
 LLM Services
 
-Chat and embedding services for LLM interactions:
-- ChatService: Chat completions with Ollama Cloud
-- EmbeddingService: Text embeddings with Ollama
+Chat and embedding services for LLM interactions.
 
 Usage:
     from app.services.llm import ChatService, EmbeddingService

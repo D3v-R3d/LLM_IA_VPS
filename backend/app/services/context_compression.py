@@ -45,7 +45,7 @@ class ContextCompressionService:
         keep_last: Optional[int] = None
     ) -> Optional[str]:
         """Compress conversation by summarizing old messages."""
-        from app.services.llm.provider_factory import provider_factory
+        from app.providers.llm.provider_factory import provider_factory
 
         if keep_last is None:
             keep_last = CONTEXT_CONFIG["keep_last_messages"]

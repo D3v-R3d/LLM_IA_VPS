@@ -5,7 +5,7 @@ Model switch tool.
 from typing import Any, Dict
 
 from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
-from app.services.llm.provider_factory import provider_factory
+from app.providers.llm.provider_factory import provider_factory
 from app.core.config import settings
 
 

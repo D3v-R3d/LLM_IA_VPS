@@ -27,7 +27,7 @@ def _get_cached_orchestrator(context: HandlerContext):
     
     from app.services.agent_tools import get_registry
     from app.services.agent_core import ToolExecutor
-    from app.services.llm.provider_factory import provider_factory
+    from app.providers.llm.provider_factory import provider_factory
     from app.core.config import settings
     from app.services.agent_core.runner import AgentRunner
     from app.services.agent_core.context_builder import ContextBuilder
@@ -72,7 +72,7 @@ class TextHandler(BaseHandler):
         from app.services.agent_core.runner import AgentRunner
         from app.services.agent_core.context_builder import ContextBuilder
         from app.services.agent_core import ToolExecutor
-        from app.services.llm.provider_factory import provider_factory
+        from app.providers.llm.provider_factory import provider_factory
         from app.core.config import settings
 
         logger = logging.getLogger(__name__)

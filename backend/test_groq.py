@@ -1,7 +1,7 @@
 import json
 import asyncio
 from app.services.agent_tools.registry import get_tool_definitions
-from app.services.llm.groq_provider import GroqProvider
+from app.providers.llm.groq_provider import GroqProvider
 
 async def test():
     provider = GroqProvider()

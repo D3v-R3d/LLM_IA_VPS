@@ -7,7 +7,7 @@ Delegates to LLMProviderFactory for provider management.
 
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
-from app.services.llm.provider_factory import get_llm_provider
+from app.providers.llm.provider_factory import get_llm_provider
 
 
 class ChatService:
@@ -28,7 +28,7 @@ class ChatService:
         # If base_url/api_key provided, create fresh provider (not cached)
         if base_url or api_key:
             self._fresh = True
-            from app.services.llm.ollama_provider import OllamaProvider
+            from app.providers.llm.ollama_provider import OllamaProvider
             self._provider = OllamaProvider(
                 base_url=base_url or settings.OLLAMA_HOST,
                 api_key=api_key or getattr(settings, 'OLLAMA_API_KEY', ''),

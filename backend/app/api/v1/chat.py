@@ -33,7 +33,7 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 @limiter.limit(os.environ.get("CHAT_RATE_LIMIT", "30/minute"))
 async def chat(request: Request, chat_request: ChatRequest):
-    from app.services.llm.provider_factory import provider_factory
+    from app.providers.llm.provider_factory import provider_factory
 
     provider_name = chat_request.provider or settings.LLM_PROVIDER
     provider = provider_factory.get_provider(provider_name)
