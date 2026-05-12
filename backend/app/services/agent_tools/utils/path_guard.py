@@ -25,6 +25,7 @@ class PathGuard:
         allow_symlinks: bool = False,
     ):
         default_allowed = [
+            "/",
             "/home",
             "/tmp",
             "/var/tmp",

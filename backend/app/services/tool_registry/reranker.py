@@ -40,6 +40,10 @@ def fuzzy_score(query_tokens: List[str], tool_text: str) -> float:
     """
     Fuzzy matching on raw tool text against query tokens.
     Uses fuzz.ratio (exact) with early stop at 0.95.
+
+    FIX: removed early return at 0.85 — it could return a sub-optimal score
+    if a later token produced a higher match. Now the full token list is
+    always scanned; only the 0.95 early-exit (perfect match) is kept.
     """
     if not query_tokens or not tool_text:
         return 0.0
@@ -52,8 +56,6 @@ def fuzzy_score(query_tokens: List[str], tool_text: str) -> float:
             best = score
         if best >= 0.95:
             return 1.0
-        if score >= 0.85:
-            return score
 
     return best
 
@@ -87,6 +89,10 @@ def build_tool_token_set(
     """
     Build a token set from tool fields for matching.
     Always uses preprocess_fn if provided.
+
+    NOTE: callers should cache the result at registry init time rather
+    than rebuilding on every query. This function is intentionally stateless
+    so the cache can live wherever the registry is managed.
     """
     if preprocess_fn is None:
         raise ValueError("preprocess_fn is required")
@@ -126,15 +132,22 @@ def build_tool_text(
 def exact_match_boost(query_tokens: List[str], tool_tokens: Set[str]) -> float:
     """
     Boost score if all query tokens are found in tool tokens.
-    Returns 0.2 bonus or 0.0.
+
+    FIX: boost is now proportional to the fraction of query tokens matched,
+    so a single-token exact match on a long query does not receive the same
+    +0.2 as a full multi-token exact match.
+
+    Returns a value in [0.0, 0.2].
     """
     if not query_tokens or not tool_tokens:
         return 0.0
 
-    if set(query_tokens) & tool_tokens == set(query_tokens):
-        return 0.2
+    matched = set(query_tokens) & tool_tokens
+    if not matched:
+        return 0.0
 
-    return 0.0
+    ratio = len(matched) / len(set(query_tokens))
+    return round(0.2 * ratio, 4)
 
 
 def intent_boost(query_tokens: List[str], tool_family: str) -> float:

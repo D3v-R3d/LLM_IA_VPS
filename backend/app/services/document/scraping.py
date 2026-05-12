@@ -39,8 +39,8 @@ class ScrapingService:
     """
 
     def __init__(self):
-        from app.services.agent_tools.tools import URLFetchService
-        self.url_fetch = URLFetchService()
+        from app.services.agent_tools.tools.web.web_fetch import WebFetchTool
+        self.url_fetch = WebFetchTool()
         from app.services.document import TextCleaningService
         self.text_cleaning = TextCleaningService()
         self._playwright_browser = None

@@ -37,6 +37,7 @@ class RunState:
     executed_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     result_signatures: List[str] = field(default_factory=list)
     run_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 def detect_loop_v2(
@@ -52,7 +53,7 @@ def detect_loop_v2(
     if not tool_history or len(tool_history) < 3:
         return None
 
-    whitelist = {"ls", "dir", "list", "search", "grep", "find", "web_search", "read_file"}
+    whitelist = {"ls", "dir", "list", "search", "grep", "find", "web_search", "read_file", "nas_find_folder", "glob", "nas_search"}
 
     recent = tool_history[-window_size:]
 

@@ -118,9 +118,10 @@ class AgentOrchestrator:
 
         self.registry = get_registry()
         self.tool_executor = ToolExecutor(registry=self.registry)
-        
+
         self._provider_cache = {}
         self._tools_cache = None
+        self._tools_cache_version = None  # FIX: track registry version for cache invalidation
 
         budgets_config = os.getenv("AGENT_TOOL_BUDGETS", "")
         budgets = {}
@@ -161,6 +162,7 @@ class AgentOrchestrator:
 
         state = RunState()
         state.run_id = run_id
+        state.user_id = user_id
 
         event_logger = None
         if db_session and run_id:
@@ -188,48 +190,58 @@ class AgentOrchestrator:
                 logger.debug(f"Plan: {len(plan.steps)} steps, tools: {plan.expected_tools}")
 
             context = self._build_context(system_prompt, messages_history, user_message)
-            
+
             # NEW: Hybrid routing with ambiguity detection
             router_result = None
             selected_tool_names = None
-            
+
             if user_message:
                 # Step 1: Try deterministic router (fast path <1ms)
                 from app.services.agent_core.tool_router import route as route_tools
                 router_result = route_tools(user_message)
-                
+
                 if router_result and router_result.get("tools"):
                     selected_tool_names = router_result.get("tools", [])
                     logger.info(f"Router tools: {selected_tool_names} "
                                f"(ambiguous={router_result.get('is_ambiguous')}, "
                                f"scopes={router_result.get('scope_candidates')})")
-            
+
             # Step 2: Fallback to embeddings if router returned empty
             if not selected_tool_names and user_message:
                 from app.services.tool_registry.registry import search_tools
                 results = search_tools(user_message, limit=15)
                 selected_tool_names = [r["name"] for r in results if r["score"] >= 0.45]
                 logger.info(f"Embedding tools (fallback): {selected_tool_names}")
-            
+
             # Step 3: Empty list if nothing found
             if not selected_tool_names:
                 selected_tool_names = []
-            
+
             logger.info(f"Selected tools for LLM: {selected_tool_names}")
-            
+
             response = await self._execute_loop(
                 context=context,
                 model=model,
                 provider_name=provider_name,
                 state=state,
                 db_session=db_session,
-                selected_tools=selected_tool_names
+                selected_tools=selected_tool_names,
+                router_result=router_result
             )
 
             final_response = await self.synthesize(
                 response.get("tool_results", []),
                 response.get("direct_response", ""),
                 state
+            )
+
+            # Update tool working memory
+            from app.services.agent_core.tool_memory import get_tool_memory
+            tool_mem = get_tool_memory()
+            tool_mem.update(
+                tool_results=response.get("tool_results", []),
+                user_message=user_message,
+                final_response=final_response
             )
 
             await self._store_interaction(user_id, user_message, final_response, state)
@@ -273,9 +285,11 @@ class AgentOrchestrator:
         from app.services.llm.provider_factory import provider_factory
         from app.core.config import settings
         from app.services.prompt_service import PromptService
-        from app.services.agent_core.intent_classifier import select_tools_for_message
+        from app.services.agent_core.tool_router import route as route_tools
 
-        tools_list = ", ".join(select_tools_for_message(message)) if message else "none"
+        # Get tools from router
+        router_result = route_tools(message)
+        tools_list = ", ".join(router_result.get("tools", [])) if router_result and router_result.get("tools") else "none"
 
         planning_template = PromptService.get_planning_prompt()
 
@@ -391,13 +405,15 @@ class AgentOrchestrator:
         )
 
     # ═══════════════════════════════════════════════════════════════════════
-    # EXECUTION LOOP
+    # JSON PLAN PARSING (FIX 4) - méthode correctement définie
     # ═══════════════════════════════════════════════════════════════════════
+
+    def _parse_json_plan_strict(self, content: str) -> Optional[Dict]:
         """Strict JSON parsing with validation."""
         try:
             content = content.strip()
             content = re.sub(r'^```json\s*', '', content)
-            content = re.sub(r'^```\s*$', '', content)
+            content = re.sub(r'^```\s*$', '', content, flags=re.MULTILINE)
             content = content.strip('`')
 
             data = json.loads(content)
@@ -430,12 +446,16 @@ class AgentOrchestrator:
         provider_name: Optional[str],
         state: RunState,
         db_session: Any = None,
-        selected_tools: Optional[List[Dict]] = None
+        selected_tools: Optional[List[Dict]] = None,
+        router_result: Optional[Dict] = None
     ) -> Dict:
         """Optimized execution loop with fast path and parallel execution."""
-        
+
         max_steps = min(self.config.max_steps, self.config.hard_limit)
-        
+
+        # FIX: initialize tool_results so it's always defined even if max_steps <= 0
+        tool_results: List = []
+
         for step in range(1, max_steps + 1):
             loop_start = time.time()
             llm_start = time.time()
@@ -479,24 +499,30 @@ class AgentOrchestrator:
                     }
 
             tools_start = time.time()
-            tool_results = await self._execute_with_idempotency(tool_calls, state, db_session=db_session)
+            # FIX: wrap execute_batch timeout at this level too
+            try:
+                tool_results = await self._execute_with_idempotency(tool_calls, state, db_session=db_session)
+            except asyncio.TimeoutError:
+                logger.error(f"Tool execution timeout at step {step}")
+                return {"direct_response": f"Tool execution timed out at step {step}.", "tool_results": []}
+
             tools_ms = int((time.time() - tools_start) * 1000)
-            
-            # NEW: Apply result merger for ambiguous queries
+
+            # Apply result merger for ambiguous queries
             if router_result and router_result.get("is_ambiguous"):
                 from app.services.agent_core.tool_executor import ResultMerger
                 original_count = len(tool_results)
                 tool_results = ResultMerger.merge_results(tool_results, router_result)
                 logger.info(f"ResultMerger: {original_count} → {len(tool_results)} results "
                            f"(scope priority applied)")
-            
+
             logger.info(f"STEP {step}: TOOLS took {tools_ms}ms ({len(tool_results)} results)")
 
             for result in tool_results:
                 if result and result.success:
                     state.completed_tools.append(result.tool)
 
-            state.last_tool_result_success = all(r.success for r in tool_results)
+            state.last_tool_result_success = all(r.success for r in tool_results if r)
 
             decision = await self._evaluate_step_v2(tool_results, state, context)
             eval_ms = int((time.time() - loop_start) * 1000) - llm_ms - tools_ms
@@ -520,9 +546,10 @@ class AgentOrchestrator:
             loop_ms = int((time.time() - loop_start) * 1000)
             logger.info(f"STEP {step}: TOTAL took {loop_ms}ms")
 
+        # FIX: always return proper ToolResult objects, not state.completed_tools (strings)
         return {
             "direct_response": "",
-            "tool_results": tool_results if step == 1 else state.completed_tools
+            "tool_results": tool_results
         }
 
     def _update_tool_history(self, tool_calls: List[Dict], state: RunState):
@@ -544,7 +571,7 @@ class AgentOrchestrator:
         db_session: Any = None
     ) -> List:
         """Optimized tool execution with parallelization for safe tools."""
-        
+
         event_logger = None
         if db_session and state.run_id:
             try:
@@ -587,16 +614,21 @@ class AgentOrchestrator:
                     arguments=tc.get("function", {}).get("arguments", {}),
                 )
 
-        batch_results = await asyncio.wait_for(
-                self.tool_executor.execute_batch(to_execute),
+        # FIX: wrap with try/except so TimeoutError propagates cleanly to _execute_loop
+        try:
+            batch_results = await asyncio.wait_for(
+                self.tool_executor.execute_batch(to_execute, user_id=state.user_id),
                 timeout=float(self.config.tool_timeout)
             )
+        except asyncio.TimeoutError:
+            logger.error(f"execute_batch timed out after {self.config.tool_timeout}s")
+            raise  # re-raise so _execute_loop can catch and handle it
 
         for idx, tool_result in zip(indices, batch_results):
             tc = tool_calls[idx]
             tool_name = tc.get("function", {}).get("name", "")
             call_key = generate_call_key(tc)
-            
+
             results[idx] = tool_result
 
             state.executed_calls[call_key] = {
@@ -637,13 +669,13 @@ class AgentOrchestrator:
 
             try:
                 retry_result = await asyncio.wait_for(
-                    self.tool_executor.execute_batch([tool_calls[idx]]),
+                    self.tool_executor.execute_batch([tool_calls[idx]], user_id=state.user_id),
                     timeout=float(self.config.retry_timeout)
                 )
             except asyncio.TimeoutError:
                 logger.error(f"Retry timeout for {tool_name} after {self.config.retry_timeout}s")
                 continue
-            
+
             if retry_result:
                 results[idx] = retry_result[0]
                 state.executed_calls[retry_call_key] = {
@@ -719,15 +751,18 @@ class AgentOrchestrator:
         tool_msgs = [m for m in context[1:-1] if m.get("role") == "tool"]
         other_msgs = [m for m in context[1:-1] if m.get("role") != "tool"]
 
+        # FIX: rebuild in correct chronological order:
+        # system → other (assistant/user turns) → tool results summary → recent tools → current user
         kept_messages = [system_msg] if system_msg else []
         kept_messages.extend(other_msgs[-3:] if len(other_msgs) > 3 else other_msgs)
 
         if tool_msgs:
+            older_tools = tool_msgs[:-self.config.context_max_messages] if len(tool_msgs) > self.config.context_max_messages else []
             recent_tools = tool_msgs[-self.config.context_max_messages:]
-            summary = self._summarize_tool_history(tool_msgs[:-self.config.context_max_messages]) if len(tool_msgs) > self.config.context_max_messages else None
-            kept_messages.extend(recent_tools)
-            if summary:
+            if older_tools:
+                summary = self._summarize_tool_history(older_tools)
                 kept_messages.append({"role": "tool", "content": f"[Previous tools: {summary}]"})
+            kept_messages.extend(recent_tools)
 
         if user_msg:
             kept_messages.append(user_msg)
@@ -865,7 +900,6 @@ class AgentOrchestrator:
                 col_keys = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
 
                 if col_keys:
-                    # Build aligned table
                     col_widths = {k: max(len(k), max(len(str(r.get(k, ""))) for r in rows[:50])) for k in col_keys}
                     header_row = "  " + " │ ".join(k.ljust(col_widths[k]) for k in col_keys)
                     sep_row    = "  " + "─┼─".join("─" * col_widths[k] for k in col_keys)
@@ -1012,52 +1046,64 @@ class AgentOrchestrator:
             )
 
         # ── Footer ───────────────────────────────────────────────────────────────
+        direct_has_termine = direct_response and "Terminé" in direct_response
+        
         if errors and not success_count:
             footer = f"\n{DIVIDER}\n❌  Échec  ({len(errors)} erreur{'s' if len(errors) > 1 else ''})"
         elif errors:
             footer = f"\n{DIVIDER}\n⚠️  Terminé avec {len(errors)} erreur{'s' if len(errors) > 1 else ''}"
+        elif direct_has_termine:
+            footer = ""
         else:
-            footer = f"\n{DIVIDER}\n✅  Terminé"
+            footer = f"\n{DIVIDER}\n✅ Terminé"
 
         sep = f"\n\n{'━' * 28}\n\n"
         return sep.join(sections) + footer
+
     # ═══════════════════════════════════════════════════════════════════════
     # LLM CALL V2 - OPTIMIZED
     # ═══════════════════════════════════════════════════════════════════════
 
     def _get_provider_and_tools(self, provider_name: Optional[str], selected_tools: Optional[List[str]] = None):
-        """Cache provider and tools for faster access."""
+        """Cache provider and tools for faster access.
+        FIX: invalidate _tools_cache when registry version changes.
+        """
         provider_key = provider_name or "default"
-        
+
         if provider_key not in self._provider_cache:
             from app.services.llm.provider_factory import provider_factory
             from app.core.config import settings
             self._provider_cache[provider_key] = provider_factory.get_provider(
                 provider_name or settings.LLM_PROVIDER
             )
-        
-        if self._tools_cache is None:
+
+        # FIX: check registry version to detect stale cache
+        current_version = getattr(self.registry, 'version', None)
+        if self._tools_cache is None or (current_version is not None and current_version != self._tools_cache_version):
             self._tools_cache = self.registry.get_all_definitions()
-        
+            self._tools_cache_version = current_version
+
         tools = self._tools_cache
         if selected_tools:
             tool_names_set = set(selected_tools)
             tools = [t for t in self._tools_cache if t.get("function", {}).get("name") in tool_names_set]
-        
+
         return self._provider_cache[provider_key], tools
 
-    async def _call_llm(self, context: List[Dict], model: Optional[str], provider_name: Optional[str], db_session: Any = None, run_id: str = None, selected_tools: Optional[List[str]] = None) -> Dict:
+    async def _call_llm(
+        self,
+        context: List[Dict],
+        model: Optional[str],
+        provider_name: Optional[str],
+        db_session: Any = None,
+        run_id: str = None,
+        selected_tools: Optional[List[str]] = None
+    ) -> Dict:
         """Optimized LLM call with caching and timeout."""
         from app.core.config import settings
         from app.observability.event_logger import EventLogger
 
         provider, tools = self._get_provider_and_tools(provider_name, selected_tools)
-        
-        # Filter to only selected tools if provided
-        if selected_tools and self._tools_cache:
-            tool_names_set = set(selected_tools)
-            tools = [t for t in self._tools_cache if t.get("function", {}).get("name") in tool_names_set]
-            logger.debug(f"Filtered tools from {len(self._tools_cache)} to {len(tools)}: {selected_tools}")
 
         if not model:
             model = settings.LLM_MODEL or "default"
@@ -1071,12 +1117,21 @@ class AgentOrchestrator:
             except Exception:
                 pass
 
+        # FIX: store task references to avoid fire-and-forget silent failures
+        log_tasks = []
+
         if event_logger:
-            asyncio.create_task(event_logger.emit_async(
+            t = asyncio.create_task(event_logger.emit_async(
                 event_type=EventType.LLM_REQUEST,
                 event_name="llm_request",
-                payload={"model": model, "provider": provider_name or settings.LLM_PROVIDER, "prompt_length": sum(len(str(m.get("content", ""))) for m in context), "tools_count": len(tools)},
+                payload={
+                    "model": model,
+                    "provider": provider_name or settings.LLM_PROVIDER,
+                    "prompt_length": sum(len(str(m.get("content", ""))) for m in context),
+                    "tools_count": len(tools)
+                },
             ))
+            log_tasks.append(t)
 
         try:
             response = await asyncio.wait_for(
@@ -1093,20 +1148,29 @@ class AgentOrchestrator:
                 content = response.get("message", {}).get("content", "") or ""
             except Exception:
                 content = str(response)[:500] if response else ""
+
             if event_logger:
-                asyncio.create_task(event_logger.emit_async(
+                t = asyncio.create_task(event_logger.emit_async(
                     event_type=EventType.LLM_RESPONSE,
                     event_name="llm_response",
-                    payload={"model": model, "provider": provider_name or settings.LLM_PROVIDER, "tokens_in": 0, "tokens_out": 0, "response_preview": content[:500] if content else None},
+                    payload={
+                        "model": model,
+                        "provider": provider_name or settings.LLM_PROVIDER,
+                        "tokens_in": 0,
+                        "tokens_out": 0,
+                        "response_preview": content[:500] if content else None
+                    },
                     duration_ms=duration_ms,
                 ))
+                log_tasks.append(t)
 
             return response
+
         except asyncio.TimeoutError:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.error(f"LLM call TIMEOUT after {self.config.llm_timeout}s")
             if event_logger:
-                asyncio.create_task(event_logger.emit_async(
+                t = asyncio.create_task(event_logger.emit_async(
                     event_type=EventType.ERROR,
                     event_name="error::LLMTimeout",
                     payload={"timeout": self.config.llm_timeout},
@@ -1114,11 +1178,13 @@ class AgentOrchestrator:
                     success=False,
                     error_detail=f"LLM call timed out after {self.config.llm_timeout}s",
                 ))
+                log_tasks.append(t)
             return {"message": {"content": f"LLM timeout after {self.config.llm_timeout}s", "tool_calls": []}}
+
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             if event_logger:
-                asyncio.create_task(event_logger.emit_async(
+                t = asyncio.create_task(event_logger.emit_async(
                     event_type=EventType.ERROR,
                     event_name="error::LLMCallError",
                     payload={"error": str(e)[:200]},
@@ -1126,9 +1192,19 @@ class AgentOrchestrator:
                     success=False,
                     error_detail=str(e),
                 ))
-
+                log_tasks.append(t)
             logger.error(f"LLM call failed: {e}")
             return {"message": {"content": f"Error: {str(e)}", "tool_calls": []}}
+
+        finally:
+            # FIX: best-effort await of logging tasks to surface exceptions
+            if log_tasks:
+                done, pending = await asyncio.wait(log_tasks, timeout=2.0)
+                for task in done:
+                    if task.exception():
+                        logger.warning(f"Event logging task failed: {task.exception()}")
+                for task in pending:
+                    task.cancel()
 
     def _parse_tool_calls(self, response: Dict) -> List[Dict]:
         """Parse tool calls from LLM response."""

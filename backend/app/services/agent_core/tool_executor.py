@@ -69,6 +69,7 @@ class ToolExecutor:
     async def execute_batch(
         self,
         tool_calls: List[Dict],
+        user_id: Optional[str] = None,
     ) -> List[ToolResponse]:
         """
         Execute a batch of tool calls.
@@ -87,7 +88,7 @@ class ToolExecutor:
         results: List[ToolResponse] = []
         if parallel:
             parallel_results = await asyncio.gather(*[
-                self._execute_single(tc)
+                self._execute_single(tc, user_id=user_id)
                 for tc in parallel
             ], return_exceptions=True)
             for r in parallel_results:
@@ -106,7 +107,7 @@ class ToolExecutor:
         # Execute sequential tools
         if sequential:
             for tc in sequential:
-                results.append(await self._execute_single(tc))
+                results.append(await self._execute_single(tc, user_id=user_id))
 
         return results
 
@@ -128,13 +129,34 @@ class ToolExecutor:
         self,
         tool_call: Dict,
         timeout: int = None,
+        user_id: Optional[str] = None,
     ) -> ToolResponse:
         timeout = timeout or self.default_timeout
         func = tool_call.get("function", {})
         tool_name = func.get("name", "unknown")
         arguments = func.get("arguments", {})
         start = time.perf_counter()
-
+        
+        # Check permissions before execution
+        from app.services.agent_tools.utils.permissions import get_permissions
+        perms = get_permissions()
+        
+        if not perms.is_allowed(tool_name, user=user_id):
+            duration = (time.perf_counter() - start) * 1000
+            logger.warning(f"PERMISSION_DENIED: {tool_name} for user {user_id}")
+            return ToolResponse(
+                success=False,
+                tool=tool_name,
+                summary=f"Permission denied: {tool_name}",
+                error=f"Tool {tool_name} is not allowed",
+                metadata=ToolMetadata(duration_ms=duration)
+            )
+        
+# Check if confirmation is required
+        if perms.requires_confirmation(tool_name):
+            confirmation_msg = perms.get_confirmation_message(tool_name, arguments)
+            logger.info(f"CONFIRMATION_REQUIRED: {tool_name} - {confirmation_msg}")
+        
         try:
             result = await asyncio.wait_for(
                 self._execute(tool_name, arguments),

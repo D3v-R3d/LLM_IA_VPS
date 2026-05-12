@@ -1,10 +1,7 @@
 # Résumé de Conversation
 
 <!-- Summary will be injected here -->
-[2026-05-12T11:26:32.403324] **Utilisateur** — cherche des films et fichiers sur son NAS (notamment « Avengers », « bulletin », fichiers .txt), parle français. Préfère des explorations directes plutôt que des listes de dossiers.
-
-**Sujets** — recherches NAS successives (noms de fichiers, dossiers, formats), listage des partages et dossiers disponibles, problèmes techniques de l’assistant (timeout, erreurs de configuration).
-
-**Conclusions** — Aucun fichier ou film trouvé lors des recherches (résultats vides). L’assistant a fini par expliquer les bugs (timeout LLM, erreur `AgentConfig`). Aucune action concrète résolue ; conversation en attente d’une nouvelle exploration.
-
-**Contexte** — NAS accessible, partages listés (`/Storage`, `/PlexMediaServer`, etc.) mais les recherches n’ont pas abouti. Dossier vidéo possible dans `/Storage/Video`.
+[2026-05-12T12:08:45.501135] **Utilisateur** — Parle français, cherche un film sur son NAS (initialement "Avengers").  
+**Sujets** — Recherche de fichiers vidéo, exploration des dossiers NAS (PlexMediaServer, Storage, etc.), tests de l’assistant et erreurs techniques récurrentes.  
+**Conclusions** — Aucun fichier vidéo ou film trouvé lors des recherches ; l’utilisateur n’a pas encore exploré le dossier `/Storage/Video`.  
+**Contexte** — L’assistant a listé les partages disponibles (8 dossiers) mais n’a pas accédé au sous-dossier `Video` de `/Storage`. Les bugs techniques (timeout, erreurs de configuration) ont perturbé la session.

@@ -111,6 +111,18 @@ class ContextBuilder:
         system_message = self._prompt.get_system_message(
             user_preferences=user_preferences
         )
+        
+        # Load tool working memory and inject into system message
+        from app.services.agent_core.tool_memory import get_tool_memory
+        tool_mem = get_tool_memory()
+        memory_text = tool_mem.render()
+        
+        if memory_text:
+            # Append tool memory to system message content
+            if isinstance(system_message, dict) and 'content' in system_message:
+                system_message['content'] += f"\n\nTOOL WORKING MEMORY:\n{memory_text}"
+            elif isinstance(system_message, str):
+                system_message += f"\n\nTOOL WORKING MEMORY:\n{memory_text}"
 
         # Build message history: summary (if any) + long-term + short-term
         history = list(memory_ctx.long_term)
