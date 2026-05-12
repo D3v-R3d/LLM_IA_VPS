@@ -1,0 +1,58 @@
+{
+  "description": "Send a text message to a Telegram user or group.",
+  "semantic_anchor": "Deliver a text message to a Telegram contact or chat",
+  "intent_type": "write",
+  "tool_family": "messaging",
+  "keywords": [
+    "send telegram message",
+    "message to telegram user",
+    "send text via telegram",
+    "notify on telegram",
+    "envoie telegram",
+    "envoie message",
+    "transmet sur telegram",
+    "envoi telegram",
+    "contacte moi sur telegram"
+  ],
+  "aliases": [
+    "telegram message",
+    "send message telegram",
+    "notify via telegram",
+    "message to chat",
+    "envoie sur telegram",
+    "message telegram",
+    "contact telegram"
+  ],
+  "negative_keywords": [
+    "send alert notification",
+    "check bot health",
+    "get user info",
+    "search web",
+    "read file"
+  ],
+  "examples": [
+    "send hello to user 123456",
+    "message via telegram",
+    "notify the admin on telegram",
+    "envoie un message telegram"
+  ],
+  "use_cases": [
+    "messaging",
+    "communication",
+    "notification"
+  ],
+  "parameters": {
+    "chat_id": "string (required)",
+    "text": "string (required)"
+  },
+  "tool_class": "TelegramSendMessageTool",
+  "embedding_boost": 1.2,
+  "priority": 2,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

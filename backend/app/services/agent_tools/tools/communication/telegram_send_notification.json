@@ -1,0 +1,57 @@
+{
+  "description": "Send an alert or notification to a Telegram chat.",
+  "semantic_anchor": "Push an alert notification to a Telegram contact or channel",
+  "intent_type": "write",
+  "tool_family": "messaging",
+  "keywords": [
+    "send alert to telegram",
+    "push notification telegram",
+    "notify alert on telegram",
+    "send warning via telegram",
+    "alerte telegram",
+    "notification telegram",
+    "envoie une alerte",
+    "notifie sur telegram"
+  ],
+  "aliases": [
+    "telegram alert",
+    "send alert",
+    "push notification",
+    "telegram warning",
+    "alerte sur telegram",
+    "notification telegram",
+    "notif telegram"
+  ],
+  "negative_keywords": [
+    "send regular message",
+    "check bot health",
+    "get user info",
+    "search web",
+    "read file"
+  ],
+  "examples": [
+    "send alert 'build completed' via telegram",
+    "notify me on telegram",
+    "alert the team with telegram",
+    "envoie l'alerte sur telegram"
+  ],
+  "use_cases": [
+    "alerting",
+    "notification",
+    "monitoring"
+  ],
+  "parameters": {
+    "chat_id": "string (required)",
+    "message": "string (required)"
+  },
+  "tool_class": "TelegramSendNotificationTool",
+  "embedding_boost": 1.1,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

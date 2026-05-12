@@ -10,7 +10,8 @@ import time
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from app.services.agent_core.tool_response import ToolResponse, ToolMetadata
+from app.services.agent_core.tool_response import ToolResponse
+from app.services.agent_core.tool_metadata import ToolMetadata
 from app.services.agent_tools.base.base_tool import ToolResult
 from app.services.agent_core.result_summarizer import ResultSummarizer
 
@@ -30,7 +31,8 @@ TOOL_METADATA = {
     "postgres_describe_table": {"parallelizable": True, "dangerous": False},
     "postgres_list_tables": {"parallelizable": True, "dangerous": False},
     "postgres_query_read": {"parallelizable": False, "dangerous": False},
-    "postgres_query_write": {"parallelizable": False, "dangerous": True},    "read_file": {"parallelizable": True, "dangerous": False},
+    "postgres_query_write": {"parallelizable": False, "dangerous": True},
+    "read_file": {"parallelizable": True, "dangerous": False},
     "scrape_and_store": {"parallelizable": True, "dangerous": False},
     "search_stored_content": {"parallelizable": True, "dangerous": False},
     "telegram_bot_health": {"parallelizable": True, "dangerous": False},

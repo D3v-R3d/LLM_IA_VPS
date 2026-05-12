@@ -18,7 +18,7 @@ class APIFetchTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "api_fetch"
+        return "api_call"
 
     @property
     def description(self) -> str:

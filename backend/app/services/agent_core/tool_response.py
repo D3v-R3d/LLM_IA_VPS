@@ -1,17 +1,13 @@
 """
-Standardized Tool Response
+Tool Response
 
-Envelope pattern for all tool outputs.
+Standardized envelope for all tool outputs.
 """
+
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-
-@dataclass
-class ToolMetadata:
-    duration_ms: float = 0.0
-    retries: int = 0
-    cached: bool = False
+from app.services.agent_core.tool_metadata import ToolMetadata
 
 
 @dataclass

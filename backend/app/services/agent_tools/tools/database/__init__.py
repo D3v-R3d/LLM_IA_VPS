@@ -1,20 +1,11 @@
 """
-Database tools - PostgreSQL specialized tools.
-
-Tools:
-- postgres_query_read: Read-only queries (SELECT/WITH)
-- postgres_query_write: Write queries (INSERT/UPDATE/DELETE)
-- postgres_list_tables: List tables (metadata)
-- postgres_describe_table: Describe table (metadata)
-- postgres_query: Deprecated, use read or write instead
+Database tools.
 """
 
-from app.services.agent_tools.tools.database.postgres import (
-    PostgresQueryReadTool,
-    PostgresQueryWriteTool,
-    PostgresListTablesTool,
-    PostgresDescribeTableTool
-)
+from app.services.agent_tools.tools.database.postgres_query_read import PostgresQueryReadTool
+from app.services.agent_tools.tools.database.postgres_query_write import PostgresQueryWriteTool
+from app.services.agent_tools.tools.database.postgres_list_tables import PostgresListTablesTool
+from app.services.agent_tools.tools.database.postgres_describe_table import PostgresDescribeTableTool
 
 __all__ = [
     "PostgresQueryReadTool",

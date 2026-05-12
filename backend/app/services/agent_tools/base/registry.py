@@ -1,20 +1,13 @@
 """
-Tool Registry (Refactored)
+Tool Registry
 
 Central registry for all available tools.
-Auto-discovers tools from tools/ subdirectories.
-Thread-safe singleton.
 """
 
-import importlib
-import logging
 import threading
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.services.agent_tools.base.base_tool import BaseTool, ToolResult
-
-logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -23,82 +16,103 @@ class ToolRegistry:
     Tools are indexed by name for quick lookup.
     Thread-safe singleton.
     """
-    
+
     _instance: Optional["ToolRegistry"] = None
     _lock: threading.Lock = threading.Lock()
-    
+
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
         self._tool_names: List[str] = []
-        self._discover()
-    
+
     @classmethod
     def get_instance(cls) -> "ToolRegistry":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = cls()
+                    cls._instance._register_default_tools()
         return cls._instance
-    
-    def _discover(self):
-        """
-        Auto-discover tools from tools/ subdirectories.
-        Scans for Python files, imports modules, finds BaseTool subclasses.
-        """
-        # Base path: app/services/agent_tools/tools/
-        base_path = Path(__file__).parent.parent / "tools"
-        if not base_path.exists():
-            logger.warning(f"Tools directory not found: {base_path}")
-            return
-        
-        # Walk through category subdirectories (file/, system/, web/, memory/, etc.)
-        for category_dir in base_path.iterdir():
-            if not category_dir.is_dir():
-                continue
-            if category_dir.name.startswith('_'):
-                continue
-            
-            # Import all .py files in this category directory
-            for py_file in category_dir.glob("*.py"):
-                if py_file.name.startswith('_'):
-                    continue
-                
-                # Convert file path to module path
-                rel_path = py_file.relative_to(Path(__file__).parent.parent.parent.parent)
-                module_path = ".".join(rel_path.with_suffix("").parts)
-                
-                try:
-                    module = importlib.import_module(module_path)
-                except Exception as e:
-                    logger.error(f"Failed to import {module_path}: {e}")
-                    continue
-                
-                # Find BaseTool subclasses in the module
-                for attr_name in dir(module):
-                    attr = getattr(module, attr_name)
-                    if (isinstance(attr, type) and 
-                        issubclass(attr, BaseTool) and 
-                        attr is not BaseTool and
-                        attr is not BaseTool.__subclasses__()):  # exclude intermediate classes
-                        
-                        # Instantiate and register
-                        try:
-                            tool_instance = attr()
-                            self.register(tool_instance)
-                            logger.info(f"Discovered tool: {tool_instance.name} from {module_path}")
-                        except Exception as e:
-                            logger.error(f"Failed to instantiate {attr_name} from {module_path}: {e}")
-        
-        
-    
-    def register(self, tool: BaseTool) -> None:
-        """Register a tool."""
+
+    def _register_default_tools(self):
+        """Register all built-in tools."""
+        from app.services.agent_tools.tools.file import (
+            ReadTool, WriteTool, EditTool, GlobTool, GrepTool, ListDirTool
+        )
+        from app.services.agent_tools.tools.system import (
+            BashTool, DockerTool, GitTool, PkillTool
+        )
+        from app.services.agent_tools.tools.web import (
+            WebFetchTool, WebSearchTool, APIFetchTool
+        )
+        from app.services.agent_tools.tools.database import (
+            PostgresQueryReadTool, PostgresQueryWriteTool,
+            PostgresListTablesTool, PostgresDescribeTableTool
+        )
+        from app.services.agent_tools.tools.communication import (
+            TelegramSendMessageTool, TelegramSendNotificationTool,
+            TelegramGetUserInfoTool, TelegramBotHealthTool
+        )
+        from app.services.agent_tools.tools.utils import UserNotesTool
+        from app.services.agent_tools.tools.scraper import (
+            ScrapeAndStoreTool, SearchStoredContentTool
+        )
+        from app.services.agent_tools.tools.memory import QdrantSearchTool
+        from app.services.agent_tools.tools.nas import (
+            NasListShareTool, NasListFolderTool, NasSearchTool,
+            NasFindFileTool, NasFindFolderTool
+        )
+
+        try:
+            from app.services.agent_tools.tools.model import ModelSwitchTool
+            has_model_tool = True
+        except ImportError:
+            has_model_tool = False
+
+        tools = [
+            ReadTool(),
+            WriteTool(),
+            EditTool(),
+            GlobTool(),
+            GrepTool(),
+            ListDirTool(),
+            BashTool(),
+            DockerTool(),
+            GitTool(),
+            PkillTool(),
+            WebFetchTool(),
+            WebSearchTool(),
+            APIFetchTool(),
+            PostgresQueryReadTool(),
+            PostgresQueryWriteTool(),
+            PostgresListTablesTool(),
+            PostgresDescribeTableTool(),
+            TelegramSendMessageTool(),
+            TelegramSendNotificationTool(),
+            TelegramGetUserInfoTool(),
+            TelegramBotHealthTool(),
+            UserNotesTool(),
+            ScrapeAndStoreTool(),
+            SearchStoredContentTool(),
+            QdrantSearchTool(),
+            NasListShareTool(),
+            NasListFolderTool(),
+            NasSearchTool(),
+            NasFindFileTool(),
+            NasFindFolderTool(),
+        ]
+
+        if has_model_tool:
+            tools.append(ModelSwitchTool())
+
+        for tool in tools:
+            self.register(tool)
+
+    def register(self, tool: BaseTool):
         if tool.name in self._tools:
-            logger.warning(f"Tool {tool.name} already registered, overwriting")
+            raise ValueError(f"Duplicate tool: {tool.name}")
         self._tools[tool.name] = tool
-        if tool.name not in self._tool_names:
-            self._tool_names.append(tool.name)
-    
+        self._tool_names.append(tool.name)
+
     def unregister(self, tool_name: str) -> bool:
         """Unregister a tool by name."""
         if tool_name in self._tools:
@@ -106,54 +120,60 @@ class ToolRegistry:
             self._tool_names.remove(tool_name)
             return True
         return False
-    
+
     def get(self, tool_name: str) -> Optional[BaseTool]:
         """Get a tool by name."""
         return self._tools.get(tool_name)
-    
+
     def get_all(self) -> List[BaseTool]:
         """Get all registered tools."""
         return list(self._tools.values())
-    
-    def get_all_canonical(self) -> List[Dict]:
-        """Get canonical schemas for ALL tools."""
-        return [tool.to_canonical() for tool in self._tools.values()]
-    
+
+    def get_all_definitions(self) -> List[Dict]:
+        """Get JSON schema definitions for ALL tools (for LLM function calling).
+        Returns only the LLM-facing part without internal metadata."""
+        return [self._llm_definition(tool) for tool in self._tools.values()]
+
     def get_definitions_by_names(self, names: List[str]) -> List[Dict]:
-        """Get OpenAI-style definitions for specific tools by name."""
+        """Get definitions for specific tools by name (with metadata)."""
         return [
             tool.to_definition()
             for name in names
             for tool in [self._tools.get(name)]
             if tool is not None
         ]
-    
+
     def get_tools_by_category(self, category: str) -> List[BaseTool]:
         """Get all tools in a category."""
         return [t for t in self._tools.values() if t.category == category]
-    
+
+    def _llm_definition(self, tool: BaseTool) -> Dict:
+        """LLM-facing definition without internal metadata."""
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            },
+        }
+
     def list_names(self) -> List[str]:
         """List all tool names."""
-        return self._tool_names.copy()
-    
+        return self._tool_names
+
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """Execute a tool by name with given arguments."""
         tool = self.get(tool_name)
         if not tool:
             return ToolResult(success=False, error=f"Tool not found: {tool_name}")
-        
-        # Optional: validate arguments
-        validation_error = tool.validate_args(**kwargs)
-        if validation_error:
-            return ToolResult(success=False, error=f"Validation error: {validation_error}")
-        
+
         try:
             result = await tool.execute(**kwargs)
             return result
         except Exception as e:
-            logger.error(f"Tool execution failed: {tool_name}: {e}")
             return ToolResult(success=False, error=f"Tool execution failed: {str(e)}")
-    
+
     def __repr__(self) -> str:
         return f"<ToolRegistry: {len(self._tools)} tools>"
 
@@ -164,8 +184,5 @@ def get_registry() -> ToolRegistry:
 
 
 def get_tool_definitions() -> List[Dict]:
-    """Get all tool definitions for LLM function calling (OpenAI format)."""
-    return get_registry().get_all_canonical()
-
-
-
+    """Get all tool definitions for LLM function calling."""
+    return get_registry().get_all_definitions()

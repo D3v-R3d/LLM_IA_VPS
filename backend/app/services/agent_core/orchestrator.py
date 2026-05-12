@@ -112,9 +112,9 @@ class AgentOrchestrator:
                 self.config = config
         self._setup_logging()
 
-        from app.services.agent_tools.registry import get_registry
+        from app.services.agent_tools.base.registry import get_registry
         from app.services.agent_core.tool_executor import ToolExecutor
-        from app.services.agent_core.side_systems import BudgetManager
+        from app.services.agent_core.budget_manager import BudgetManager
 
         self.registry = get_registry()
         self.tool_executor = ToolExecutor(registry=self.registry)
