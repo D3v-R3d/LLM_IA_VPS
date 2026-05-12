@@ -23,13 +23,14 @@ VECTOR_SIZE = 768
 def _load_tool_definitions() -> Dict:
     """Load all tool definitions from JSON files."""
     tools = {}
-    pattern = os.path.join(os.path.dirname(__file__), "../agent_tools/*_tools.json")
-    for filepath in glob.glob(pattern):
+    pattern = os.path.join(os.path.dirname(__file__), "../agent_tools/tools/**/*.json")
+    for filepath in glob.glob(pattern, recursive=True):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
-                tools.update(data)
-                logger.info(f"Loaded {len(data)} tools from {filepath.split('/')[-1]}")
+                if isinstance(data, dict) and "name" in data:
+                    tools[data["name"]] = data
+                    logger.info(f"Loaded {filepath.split('/')[-1]}")
         except Exception as e:
             logger.error(f"Failed to load {filepath}: {e}")
     return tools

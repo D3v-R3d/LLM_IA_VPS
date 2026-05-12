@@ -4,7 +4,7 @@ Groq Tool Adapter
 Reuses OpenAI adapter since Groq uses OpenAI-compatible format.
 """
 
-from app.services.agent_tools.providers.adapters.openai_adapter import OpenAIAdapter
+from app.providers.adapters.openai_adapter import OpenAIAdapter
 
 
 class GroqAdapter(OpenAIAdapter):

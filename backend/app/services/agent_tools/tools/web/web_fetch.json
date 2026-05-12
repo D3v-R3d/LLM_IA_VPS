@@ -54,5 +54,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 5,
     "destructive": false
-  }
+  },
+  "name": "web_fetch"
 }

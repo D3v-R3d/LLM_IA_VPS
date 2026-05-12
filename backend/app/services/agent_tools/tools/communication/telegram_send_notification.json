@@ -53,5 +53,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 0,
     "destructive": false
-  }
+  },
+  "name": "telegram_send_notification"
 }

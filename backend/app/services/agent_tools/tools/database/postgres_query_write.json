@@ -58,5 +58,6 @@
     "parallel_safe": false,
     "max_calls_per_run": 0,
     "destructive": true
-  }
+  },
+  "name": "postgres_query_write"
 }

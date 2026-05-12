@@ -53,5 +53,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 0,
     "destructive": false
-  }
+  },
+  "name": "postgres_list_tables"
 }

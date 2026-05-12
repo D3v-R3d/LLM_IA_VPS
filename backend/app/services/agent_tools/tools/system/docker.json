@@ -56,5 +56,6 @@
     "parallel_safe": false,
     "max_calls_per_run": 5,
     "destructive": false
-  }
+  },
+  "name": "docker"
 }

@@ -7,7 +7,7 @@ Converts between canonical tool schema and OpenAI function-calling format.
 from typing import List, Dict, Any
 import json
 
-from app.services.agent_tools.providers.adapters.base_adapter import BaseAdapter
+from app.providers.adapters.base_adapter import BaseAdapter
 
 
 class OpenAIAdapter(BaseAdapter):

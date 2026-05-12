@@ -12,7 +12,7 @@ import logging
 
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
-from app.services.agent_tools.providers.adapters.google_adapter import GoogleAdapter
+from app.providers.adapters.google_adapter import GoogleAdapter
 
 logger = logging.getLogger(__name__)
 

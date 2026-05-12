@@ -1,5 +1,4 @@
 {
-  "name": "scrape_and_store",
   "description": "Scrape web content from URLs, clean it, chunk it, create embeddings, and store in vector database.",
   "semantic_anchor": "Scrape URLs, process content, and store in vector database",
   "intent_type": "write",
@@ -43,5 +42,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 0,
     "destructive": false
-  }
+  },
+  "name": "scrape_and_store"
 }

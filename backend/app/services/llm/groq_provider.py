@@ -14,7 +14,7 @@ import httpx
 
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
-from app.services.agent_tools.providers.adapters.groq_adapter import GroqAdapter
+from app.providers.adapters.groq_adapter import GroqAdapter
 
 logger = logging.getLogger(__name__)
 

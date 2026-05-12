@@ -1,4 +1,4 @@
 # Résumé de Conversation
 
 <!-- Summary will be injected here -->
-[2026-05-12T12:09:45.454869] L'utilisateur, francophone, a cherché à plusieurs reprises des fichiers spécifiques sur son NAS (film « Avengers », fichier .txt, « bulletin ») sans succès (résultats vides). L'assistant a listé les partages et dossiers disponibles, mais l'utilisateur a reproché de ne pas répondre à sa question. Des erreurs techniques (timeout, bug de configuration) sont survenues en cours de conversation. Aucune décision ou action concrète n'a été prise ; la dernière demande d'exploration pour trouver un film est restée sans réponse. Pour continuer, il faudrait explorer le dossier `/Storage/Video` ou effectuer une recherche plus large.
+[2026-05-12T14:02:04.602688] Previous context: 254 messages about various topics.

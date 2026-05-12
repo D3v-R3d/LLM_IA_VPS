@@ -49,9 +49,12 @@ async def lifespan(app: FastAPI):
     cleanup when it shuts down.
     """
     from app.core.lock_manager import get_lock_manager
+    from app.models import init_tool_registry
 
     lock_manager = get_lock_manager()
     await lock_manager.start_cleanup_task()
+
+    init_tool_registry()
 
     yield
 

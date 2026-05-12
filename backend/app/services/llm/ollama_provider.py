@@ -13,7 +13,7 @@ import logging
 
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
-from app.services.agent_tools.providers.adapters.ollama_adapter import OllamaAdapter
+from app.providers.adapters.ollama_adapter import OllamaAdapter
 
 logger = logging.getLogger(__name__)
 

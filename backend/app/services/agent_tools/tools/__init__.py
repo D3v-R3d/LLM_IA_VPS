@@ -4,10 +4,8 @@ Agent Tools
 File tools: read, write, edit, glob, grep, ls
 System tools: bash, docker, git, pkill
 Web tools: web_fetch, web_search, api_fetch
-Database tools: postgres_query_read, postgres_query_write, postgres_list_tables, postgres_describe_table
+Database tools: postgres_query_read, postgres_query_write, postgres_list_tables, postgres_describe_table, qdrant_search
 Communication tools: telegram_send_message, telegram_send_notification, etc.
-Memory tools: qdrant_search
-Model tools: model_switch
 NAS tools: nas_list_share, nas_list_folder, nas_search
 Scraper tools: scrape_and_store, search_stored_content
 Utils tools: user_write_notes
@@ -27,15 +25,14 @@ from app.services.agent_tools.tools.web import (
 )
 from app.services.agent_tools.tools.database import (
     PostgresQueryReadTool, PostgresQueryWriteTool,
-     PostgresListTablesTool, PostgresDescribeTableTool
+    PostgresListTablesTool, PostgresDescribeTableTool,
+    QdrantSearchTool
 )
 from app.services.agent_tools.tools.communication import (
     TelegramSendMessageTool, TelegramSendNotificationTool,
     TelegramGetUserInfoTool, TelegramBotHealthTool
 )
-from app.services.agent_tools.tools.memory import (
-    QdrantSearchTool
-)
+
 from app.services.agent_tools.tools.nas import (
     NasListShareTool, NasListFolderTool, NasSearchTool
 )
@@ -58,9 +55,9 @@ __all__ = [
     "WebFetchTool", "WebSearchTool", "APIFetchTool",
     "PostgresQueryReadTool", "PostgresQueryWriteTool",
     "PostgresListTablesTool", "PostgresDescribeTableTool",
+    "QdrantSearchTool",
     "TelegramSendMessageTool", "TelegramSendNotificationTool",
     "TelegramGetUserInfoTool", "TelegramBotHealthTool",
-    "QdrantSearchTool",
     "NasListShareTool", "NasListFolderTool", "NasSearchTool",
     "ScrapeAndStoreTool", "SearchStoredContentTool",
     "UserNotesTool",

@@ -30,17 +30,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Create all tables (idempotent - only creates missing tables)
 Base.metadata.create_all(bind=engine)
 
-# Initialize Qdrant collections
 try:
     from app.services.qdrant_init import init_qdrant_collections
     init_qdrant_collections()
 except Exception as e:
     logger.warning(f"Qdrant init skipped: {e}")
 
-# Initialize Tool Registry (Qdrant indexing)
 try:
     from app.services.tool_registry import init_tool_registry
     init_tool_registry()

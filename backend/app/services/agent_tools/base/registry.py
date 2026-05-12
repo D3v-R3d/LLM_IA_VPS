@@ -46,7 +46,8 @@ class ToolRegistry:
         )
         from app.services.agent_tools.tools.database import (
             PostgresQueryReadTool, PostgresQueryWriteTool,
-            PostgresListTablesTool, PostgresDescribeTableTool
+            PostgresListTablesTool, PostgresDescribeTableTool,
+            QdrantSearchTool
         )
         from app.services.agent_tools.tools.communication import (
             TelegramSendMessageTool, TelegramSendNotificationTool,
@@ -56,7 +57,6 @@ class ToolRegistry:
         from app.services.agent_tools.tools.scraper import (
             ScrapeAndStoreTool, SearchStoredContentTool
         )
-        from app.services.agent_tools.tools.memory import QdrantSearchTool
         from app.services.agent_tools.tools.nas import (
             NasListShareTool, NasListFolderTool, NasSearchTool,
             NasFindFileTool, NasFindFolderTool

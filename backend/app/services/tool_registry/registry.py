@@ -39,12 +39,13 @@ SCORE_THRESHOLD = 0.45
 def get_all_tools() -> Dict:
     """Get all tool definitions."""
     tools = {}
-    pattern = os.path.join(os.path.dirname(__file__), "../agent_tools/*_tools.json")
-    for filepath in glob.glob(pattern):
+    pattern = os.path.join(os.path.dirname(__file__), "../agent_tools/tools/**/*.json")
+    for filepath in glob.glob(pattern, recursive=True):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
-                tools.update(data)
+                if isinstance(data, dict) and "name" in data:
+                    tools[data["name"]] = data
         except Exception as e:
             logger.error(f"Failed to load {filepath}: {e}")
     return tools

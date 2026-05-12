@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Optional
 import anthropic
 from app.services.llm.llm_provider import LLMProvider
 from app.core.config import settings
-from app.services.agent_tools.providers.adapters.anthropic_adapter import AnthropicAdapter
+from app.providers.adapters.anthropic_adapter import AnthropicAdapter
 
 logger = logging.getLogger(__name__)
 

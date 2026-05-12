@@ -1,5 +1,4 @@
 {
-  "name": "model_switch",
   "description": "List available LLM models or switch to a different model. Use 'list' to see available models or 'switch:model_id' to change.",
   "semantic_anchor": "Switch between different LLM models or list available models",
   "intent_type": "admin",
@@ -42,5 +41,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 0,
     "destructive": false
-  }
+  },
+  "name": "model_switch"
 }

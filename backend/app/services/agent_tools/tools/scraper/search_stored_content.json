@@ -1,5 +1,4 @@
 {
-  "name": "search_stored_content",
   "description": "Search through previously stored web content using semantic similarity.",
   "semantic_anchor": "Search previously scraped and stored web content",
   "intent_type": "read",
@@ -39,5 +38,6 @@
     "parallel_safe": true,
     "max_calls_per_run": 0,
     "destructive": false
-  }
+  },
+  "name": "search_stored_content"
 }
