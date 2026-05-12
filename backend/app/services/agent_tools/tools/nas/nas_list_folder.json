@@ -1,0 +1,61 @@
+{
+  "description": "View the contents of a specific folder on the Synology NAS.",
+  "semantic_anchor": "Open and view files inside a specific folder on network storage",
+  "intent_type": "read",
+  "tool_family": "nas",
+  "keywords": [
+    "open a folder",
+    "view files inside",
+    "browse folder contents",
+    "explore directory",
+    "navigate into a folder",
+    "ouvre ce dossier",
+    "voir le contenu du dossier",
+    "parcours ce repertoire",
+    "explore le dossier photos",
+    "affiche ce qu'il y a dans"
+  ],
+  "aliases": [
+    "open folder contents",
+    "browse directory",
+    "explore nas folder",
+    "view folder items",
+    "list folder items",
+    "ouvre le repertoire",
+    "parcours le dossier",
+    "vois le contenu"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "find a specific file",
+    "find a folder by name",
+    "list all shares",
+    "show available folders",
+    "discover nas structure"
+  ],
+  "examples": [
+    "show me what's inside the Plex folder",
+    "open the docker folder",
+    "browse the backup folder contents",
+    "what files are in the media folder",
+    "ouvre le dossier docker et montre moi ce qu'il contient"
+  ],
+  "use_cases": [
+    "navigation",
+    "inspection",
+    "exploration"
+  ],
+  "parameters": {
+    "folder_path": "string (optional, default /)"
+  },
+  "tool_class": "NasListFolderTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

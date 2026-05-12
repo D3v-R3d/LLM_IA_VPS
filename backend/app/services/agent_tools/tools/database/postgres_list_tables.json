@@ -1,0 +1,57 @@
+{
+  "description": "Discover all available tables in a PostgreSQL database.",
+  "semantic_anchor": "Explore what tables exist in a database",
+  "intent_type": "inspect",
+  "tool_family": "database",
+  "keywords": [
+    "what tables exist",
+    "show database structure",
+    "list all tables",
+    "explore database schema",
+    "discover available data",
+    "quelles tables existent",
+    "liste les tables disponibles",
+    "voir la structure de la base",
+    "qu'est-ce qu'il y a dans ma base"
+  ],
+  "aliases": [
+    "discover tables",
+    "explore schema",
+    "show all tables",
+    "list database tables",
+    "voir les tables",
+    "exploration base",
+    "decouvrir la base"
+  ],
+  "negative_keywords": [
+    "read data from table",
+    "select records",
+    "describe columns",
+    "show table structure",
+    "query data",
+    "insert update delete"
+  ],
+  "examples": [
+    "what tables are in this database",
+    "show me all available tables",
+    "explore the database structure",
+    "what data can I access",
+    "quelles tables sont disponibles dans ma base"
+  ],
+  "use_cases": [
+    "inspection",
+    "discovery",
+    "schema exploration"
+  ],
+  "parameters": {},
+  "tool_class": "PostgresListTablesTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

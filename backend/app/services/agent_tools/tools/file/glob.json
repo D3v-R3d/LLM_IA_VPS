@@ -1,0 +1,60 @@
+{
+  "description": "Find files matching a pattern in a directory tree.",
+  "semantic_anchor": "Discover files by pattern matching across directories",
+  "intent_type": "search",
+  "tool_family": "filesystem",
+  "keywords": [
+    "find files by pattern",
+    "search for files matching pattern",
+    "list files with extension",
+    "find all files in project",
+    "search file tree",
+    "trouve les fichiers",
+    "cherche par motif",
+    "liste les fichiers .py",
+    "trouve tous les .log",
+    "recherche fichiers par pattern"
+  ],
+  "aliases": [
+    "find matching files",
+    "search by pattern",
+    "glob files",
+    "pattern search",
+    "find by extension",
+    "recherche pattern",
+    "trouve par motif"
+  ],
+  "negative_keywords": [
+    "read file content",
+    "write to file",
+    "edit file",
+    "search inside files",
+    "search text in file"
+  ],
+  "examples": [
+    "find all python files in the project",
+    "list all json files in the src folder",
+    "find every .log file",
+    "search for all .tmp files",
+    "trouve tous les fichiers .py"
+  ],
+  "use_cases": [
+    "search",
+    "discovery",
+    "file exploration"
+  ],
+  "parameters": {
+    "pattern": "string (required)",
+    "base_dir": "string (optional, default .)"
+  },
+  "tool_class": "GlobTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

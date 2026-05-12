@@ -1,0 +1,53 @@
+{
+  "description": "Check if the Telegram bot is working and responding.",
+  "semantic_anchor": "Verify Telegram bot connectivity and health status",
+  "intent_type": "read",
+  "tool_family": "messaging",
+  "keywords": [
+    "is telegram bot working",
+    "check telegram status",
+    "bot health check",
+    "is bot responding",
+    "le bot telegram fonctionne",
+    "etat du bot",
+    "bot telegram actif"
+  ],
+  "aliases": [
+    "telegram health",
+    "check bot status",
+    "bot status telegram",
+    "is bot alive",
+    "bot connectivity",
+    "test bot",
+    "verifie bot telegram"
+  ],
+  "negative_keywords": [
+    "send message",
+    "send alert",
+    "get user info",
+    "search web",
+    "read file"
+  ],
+  "examples": [
+    "is the telegram bot working",
+    "check bot health",
+    "is the bot responding",
+    "le bot telegram est-il en ligne"
+  ],
+  "use_cases": [
+    "health check",
+    "monitoring",
+    "inspection"
+  ],
+  "parameters": {},
+  "tool_class": "TelegramBotHealthTool",
+  "embedding_boost": 1.0,
+  "priority": 0,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

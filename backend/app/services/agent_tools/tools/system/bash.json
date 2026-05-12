@@ -1,0 +1,62 @@
+{
+  "description": "Execute shell commands in the system terminal.",
+  "semantic_anchor": "Run terminal commands to perform system operations",
+  "intent_type": "mutate",
+  "tool_family": "system",
+  "keywords": [
+    "run terminal command",
+    "execute shell command",
+    "run system command",
+    "open terminal",
+    "launch script",
+    "execute une commande",
+    "lance une commande terminal",
+    "lance un script",
+    "ouvre le terminal",
+    "commande shell"
+  ],
+  "aliases": [
+    "terminal command",
+    "shell execution",
+    "run command",
+    "system command",
+    "execute script",
+    "commande terminal",
+    "execution shell"
+  ],
+  "negative_keywords": [
+    "search for files in filesystem",
+    "read file content",
+    "git operations",
+    "docker operations",
+    "database queries"
+  ],
+  "examples": [
+    "check system resource usage",
+    "run a python script",
+    "execute a shell command",
+    "check disk space",
+    "run the build script",
+    "execute la commande top"
+  ],
+  "use_cases": [
+    "system operations",
+    "script execution",
+    "monitoring",
+    "maintenance"
+  ],
+  "parameters": {
+    "command": "string (required)",
+    "timeout": "number (optional, default 30)"
+  },
+  "tool_class": "BashTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": false,
+    "cost": 3,
+    "parallel_safe": false,
+    "max_calls_per_run": 3,
+    "destructive": false
+  }
+}

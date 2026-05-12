@@ -1,0 +1,60 @@
+{
+  "description": "List files and folders in a directory.",
+  "semantic_anchor": "Explore what files and folders exist in a directory",
+  "intent_type": "read",
+  "tool_family": "filesystem",
+  "keywords": [
+    "list directory contents",
+    "show files in folder",
+    "what is in this directory",
+    "browse folder",
+    "view files and folders",
+    "liste les fichiers",
+    "affiche le contenu du dossier",
+    "qu'est-ce qu'il y a ici",
+    "parcours ce repertoire",
+    "montre les fichiers"
+  ],
+  "aliases": [
+    "browse directory",
+    "list folder",
+    "show folder contents",
+    "view directory",
+    "explore folder",
+    "liste repertoire",
+    "parcours dossier",
+    "vois fichiers"
+  ],
+  "negative_keywords": [
+    "read file content",
+    "search inside files",
+    "write to file",
+    "create file",
+    "edit file"
+  ],
+  "examples": [
+    "list files in the current directory",
+    "show me what is in /home",
+    "browse the project folder",
+    "what files are here",
+    "liste les fichiers du repertoire courant"
+  ],
+  "use_cases": [
+    "exploration",
+    "navigation",
+    "discovery"
+  ],
+  "parameters": {
+    "path": "string (optional, default .)"
+  },
+  "tool_class": "ListDirTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

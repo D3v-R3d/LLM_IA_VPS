@@ -1,0 +1,61 @@
+{
+  "description": "Save a personal note for the user to remember later.",
+  "semantic_anchor": "Memorize and store a personal note for the user",
+  "intent_type": "write",
+  "tool_family": "filesystem",
+  "keywords": [
+    "remember this",
+    "save a note",
+    "write down this",
+    "memorize this for me",
+    "save for later",
+    "souviens-toi de",
+    "sauve ma note",
+    "note moi",
+    "memorise",
+    "rappelle-moi"
+  ],
+  "aliases": [
+    "save note",
+    "remember note",
+    "take note",
+    "write note",
+    "memorize",
+    "sauve note",
+    "souviens-toi",
+    "note personnelle"
+  ],
+  "negative_keywords": [
+    "search saved notes",
+    "find my notes",
+    "read saved notes",
+    "query notes",
+    "search stored content",
+    "search memory"
+  ],
+  "examples": [
+    "remember that my password is 1234",
+    "save note: meeting at 3pm",
+    "note to self: call mom",
+    "remember my password is secret123",
+    "sauve ma note: reunion demain"
+  ],
+  "use_cases": [
+    "note taking",
+    "memory",
+    "personal reminder"
+  ],
+  "parameters": {
+    "content": "string (required)"
+  },
+  "tool_class": "UserNotesTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

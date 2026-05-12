@@ -1,0 +1,60 @@
+{
+  "description": "Call an external API to get or send data.",
+  "semantic_anchor": "Communicate with an external API endpoint to exchange data",
+  "intent_type": "read",
+  "tool_family": "web",
+  "keywords": [
+    "call external api",
+    "request data from service",
+    "fetch from api endpoint",
+    "communicate with web service",
+    "query api",
+    "appeler une api externe",
+    "requete vers un service web",
+    "interroge le point de terminaison",
+    "appele le web service"
+  ],
+  "aliases": [
+    "api request",
+    "call api endpoint",
+    "http request",
+    "rest api call",
+    "fetch api",
+    "requete http",
+    "appel web service"
+  ],
+  "negative_keywords": [
+    "search the internet",
+    "google search",
+    "fetch webpage",
+    "scrape url"
+  ],
+  "examples": [
+    "get users from the api",
+    "post data to the endpoint",
+    "call the weather api",
+    "fetch data from external service",
+    "appele l'api pour recuperer les donnees"
+  ],
+  "use_cases": [
+    "data exchange",
+    "api integration",
+    "service communication"
+  ],
+  "parameters": {
+    "url": "string (required)",
+    "method": "string (optional, default GET)",
+    "headers": "object (optional)",
+    "body": "string (optional)"
+  },
+  "tool_class": "APIFetchTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

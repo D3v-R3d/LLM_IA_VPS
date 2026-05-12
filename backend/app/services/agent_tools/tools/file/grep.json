@@ -1,0 +1,62 @@
+{
+  "description": "Search for text patterns inside files.",
+  "semantic_anchor": "Find specific text or patterns within file contents",
+  "intent_type": "search",
+  "tool_family": "filesystem",
+  "keywords": [
+    "search inside files",
+    "find text in file",
+    "look for pattern in documents",
+    "search for specific text",
+    "find occurrences of word",
+    "cherche dans les fichiers",
+    "trouve ce texte dans le fichier",
+    "cherche le mot error",
+    "cherche dans le code",
+    "recherche dans les fichiers"
+  ],
+  "aliases": [
+    "search text in files",
+    "find pattern",
+    "search code",
+    "look for text",
+    "find word",
+    "recherche texte",
+    "cherche mot",
+    "trouve motif"
+  ],
+  "negative_keywords": [
+    "find files by name",
+    "list files",
+    "read entire file",
+    "write to file",
+    "create file"
+  ],
+  "examples": [
+    "find all lines with error in app.log",
+    "search for TODO in the project",
+    "find every occurrence of import",
+    "search for password in config files",
+    "cherche 'error' dans les logs"
+  ],
+  "use_cases": [
+    "search",
+    "debugging",
+    "code analysis"
+  ],
+  "parameters": {
+    "pattern": "string (required)",
+    "path": "string (required)",
+    "case_sensitive": "boolean (optional, default false)"
+  },
+  "tool_class": "GrepTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

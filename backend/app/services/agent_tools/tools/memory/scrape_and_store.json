@@ -1,0 +1,59 @@
+{
+  "description": "Fetch a webpage and save its content for future retrieval.",
+  "semantic_anchor": "Capture and store web content for later semantic search",
+  "intent_type": "write",
+  "tool_family": "memory",
+  "keywords": [
+    "save this webpage for later",
+    "store web content",
+    "capture this page",
+    "bookmark web content",
+    "remember this article",
+    "sauve cette page",
+    "stocke le contenu web",
+    "memorise cette page",
+    "sauvegarde cet article"
+  ],
+  "aliases": [
+    "bookmark page",
+    "save webpage",
+    "store url content",
+    "capture webpage",
+    "remember web page",
+    "sauve page web",
+    "stocke url"
+  ],
+  "negative_keywords": [
+    "search saved content",
+    "find saved memories",
+    "query memory",
+    "search stored notes",
+    "read saved pages"
+  ],
+  "examples": [
+    "save this webpage for later reading",
+    "store this article in my memory",
+    "capture this page content",
+    "bookmark this url in my knowledge",
+    "sauve cette page pour plus tard"
+  ],
+  "use_cases": [
+    "bookmarking",
+    "content capture",
+    "memory storage"
+  ],
+  "parameters": {
+    "url": "string (required)",
+    "collection": "string (optional, default web_content)"
+  },
+  "tool_class": "ScrapeAndStoreTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 3,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

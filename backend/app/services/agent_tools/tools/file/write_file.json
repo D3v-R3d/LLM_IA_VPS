@@ -1,0 +1,61 @@
+{
+  "description": "Create a new file or overwrite an existing file with content.",
+  "semantic_anchor": "Create or save content to a new file",
+  "intent_type": "write",
+  "tool_family": "filesystem",
+  "keywords": [
+    "create new file",
+    "save content to file",
+    "write to file",
+    "make a new document",
+    "save text to disk",
+    "creer un fichier",
+    "ecris dans un fichier",
+    "sauve ce contenu",
+    "cree le fichier",
+    "cree un nouveau fichier"
+  ],
+  "aliases": [
+    "create file",
+    "save file",
+    "write document",
+    "make file",
+    "save to disk",
+    "creation fichier",
+    "ecrire fichier",
+    "nouveau fichier"
+  ],
+  "negative_keywords": [
+    "read file",
+    "open file",
+    "view file content",
+    "display file",
+    "edit existing file"
+  ],
+  "examples": [
+    "create a new config file with these settings",
+    "save this text to /tmp/notes.txt",
+    "write the output to results.json",
+    "make a new file called notes.txt",
+    "cree le fichier app.log avec ce contenu"
+  ],
+  "use_cases": [
+    "file creation",
+    "data persistence",
+    "output"
+  ],
+  "parameters": {
+    "path": "string (required)",
+    "content": "string (required)"
+  },
+  "tool_class": "WriteTool",
+  "embedding_boost": 1.1,
+  "priority": 1,
+  "meta": {
+    "safe": false,
+    "cost": 1,
+    "parallel_safe": false,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

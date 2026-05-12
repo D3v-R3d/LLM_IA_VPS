@@ -1,0 +1,43 @@
+{
+  "name": "search_stored_content",
+  "description": "Search through previously stored web content using semantic similarity.",
+  "semantic_anchor": "Search previously scraped and stored web content",
+  "intent_type": "read",
+  "tool_family": "scraper",
+  "keywords": [
+    "search stored web content",
+    "find scraped information",
+    "query saved pages",
+    "cherche dans le contenu sauvegarde",
+    "trouve les pages web sauvegardees"
+  ],
+  "aliases": [
+    "search saved content",
+    "find scraped data",
+    "query knowledge base",
+    "recherche dans le stockage"
+  ],
+  "negative_keywords": [
+    "scrape new url",
+    "fetch new webpage",
+    "store new content"
+  ],
+  "examples": [
+    "search through the pages I saved earlier",
+    "find information I scraped from that website",
+    "trouve les infos que j ai scrapees"
+  ],
+  "parameters": {
+    "query": "string (required)",
+    "collection_name": "string (optional, default web_content)",
+    "limit": "integer (optional, default 5)",
+    "score_threshold": "number (optional, default 0.5)"
+  },
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

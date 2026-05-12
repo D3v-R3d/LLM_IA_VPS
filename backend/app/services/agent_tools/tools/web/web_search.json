@@ -1,0 +1,60 @@
+{
+  "description": "Search the internet for information, news, and answers.",
+  "semantic_anchor": "Query the internet to find information, answers, and knowledge",
+  "intent_type": "search",
+  "tool_family": "web",
+  "keywords": [
+    "search the internet",
+    "find information online",
+    "look up something on web",
+    "search for latest news",
+    "find answers on the web",
+    "cherche sur internet",
+    "recherche sur le web",
+    "trouve de l'information",
+    "cherche les dernieres nouvelles",
+    "what is the latest on"
+  ],
+  "aliases": [
+    "internet search",
+    "web query",
+    "google search",
+    "search online",
+    "find info web",
+    "recherche internet",
+    "cherche sur le web"
+  ],
+  "negative_keywords": [
+    "fetch specific url",
+    "read specific webpage",
+    "get page content",
+    "open url",
+    "scrape webpage"
+  ],
+  "examples": [
+    "search for the latest AI news",
+    "what is quantum computing",
+    "who is Elon Musk",
+    "find information about machine learning",
+    "cherche les dernieres nouvelles tech"
+  ],
+  "use_cases": [
+    "search",
+    "research",
+    "information retrieval"
+  ],
+  "parameters": {
+    "query": "string (required)",
+    "num_results": "number (optional, default 5)"
+  },
+  "tool_class": "WebSearchTool",
+  "embedding_boost": 1.2,
+  "priority": 2,
+  "meta": {
+    "safe": true,
+    "cost": 3,
+    "parallel_safe": true,
+    "max_calls_per_run": 3,
+    "destructive": false
+  }
+}

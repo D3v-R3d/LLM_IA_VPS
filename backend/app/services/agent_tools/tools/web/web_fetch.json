@@ -1,0 +1,58 @@
+{
+  "description": "Extract and retrieve the content of a web page.",
+  "semantic_anchor": "Load and extract text content from a specific URL",
+  "intent_type": "read",
+  "tool_family": "web",
+  "keywords": [
+    "fetch web page",
+    "load content from url",
+    "scrape webpage",
+    "get page content",
+    "read webpage content",
+    "recupere le contenu d'une page web",
+    "ouvre cette page",
+    "extrait le texte du site",
+    "charge le contenu de l'url"
+  ],
+  "aliases": [
+    "scrape url",
+    "fetch url content",
+    "load webpage",
+    "get web page",
+    "extract from url",
+    "recupere page web",
+    "extrait contenu url"
+  ],
+  "negative_keywords": [
+    "search the internet",
+    "google search",
+    "find information",
+    "web search",
+    "query web"
+  ],
+  "examples": [
+    "fetch the content of example.com",
+    "get the text from wikipedia page",
+    "load and read this webpage",
+    "scrap the blog article",
+    "recupere le contenu de cette page"
+  ],
+  "use_cases": [
+    "content extraction",
+    "page reading",
+    "data retrieval"
+  ],
+  "parameters": {
+    "url": "string (required)"
+  },
+  "tool_class": "WebFetchTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 5,
+    "destructive": false
+  }
+}

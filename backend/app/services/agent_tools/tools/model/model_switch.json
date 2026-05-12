@@ -1,0 +1,46 @@
+{
+  "name": "model_switch",
+  "description": "List available LLM models or switch to a different model. Use 'list' to see available models or 'switch:model_id' to change.",
+  "semantic_anchor": "Switch between different LLM models or list available models",
+  "intent_type": "admin",
+  "tool_family": "model",
+  "keywords": [
+    "switch model",
+    "change llm",
+    "select model",
+    "list models",
+    "change model",
+    "changer de modele",
+    "selectionne un modele",
+    "liste les modeles"
+  ],
+  "aliases": [
+    "switch llm",
+    "change language model",
+    "use different model",
+    "switching model",
+    "changement de modele"
+  ],
+  "negative_keywords": [
+    "run inference",
+    "generate text",
+    "chat with model"
+  ],
+  "examples": [
+    "switch to a faster model",
+    "list available models",
+    "change the llm to gpt-4",
+    "change model to claude"
+  ],
+  "parameters": {
+    "action": "string (required, enum: list/switch)",
+    "model_id": "string (required if action is switch)"
+  },
+  "meta": {
+    "safe": true,
+    "cost": 0,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "description": "List all available shared folders on the Synology NAS.",
+  "semantic_anchor": "Browse and discover all shared folders available on the network storage",
+  "intent_type": "read",
+  "tool_family": "nas",
+  "keywords": [
+    "show my shared folders",
+    "what is on my nas",
+    "browse available storage",
+    "list accessible shares",
+    "see storage folders",
+    "quels dossiers sont partages",
+    "affiche les partages disponibles",
+    "Accessible sur le NAS",
+    "vois les dossiers du nas",
+    "storage accessible"
+  ],
+  "aliases": [
+    "browse nas shares",
+    "list nas volumes",
+    "show available folders",
+    "view network shares",
+    "explore nas storage",
+    "voir les partages",
+    "liste les dossiers nas"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "find a specific file",
+    "find a folder by name",
+    "open a specific folder",
+    "browse inside a folder",
+    "list folder contents"
+  ],
+  "examples": [
+    "show me all shared folders on my nas",
+    "what folders can I access on the storage",
+    "browse available shares",
+    "what storage is available",
+    "quels sont mes partages sur le nas"
+  ],
+  "use_cases": [
+    "discovery",
+    "navigation",
+    "inspection"
+  ],
+  "parameters": {},
+  "tool_class": "NasListShareTool",
+  "embedding_boost": 1.2,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

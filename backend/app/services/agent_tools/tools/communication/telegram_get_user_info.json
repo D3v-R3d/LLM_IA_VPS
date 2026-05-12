@@ -1,0 +1,54 @@
+{
+  "description": "Get information about a Telegram user by their ID.",
+  "semantic_anchor": "Look up Telegram user profile information",
+  "intent_type": "read",
+  "tool_family": "messaging",
+  "keywords": [
+    "get telegram user profile",
+    "lookup telegram user",
+    "find user info telegram",
+    "check telegram user details",
+    "info utilisateur telegram",
+    "profil telegram",
+    "trouve l'utilisateur telegram"
+  ],
+  "aliases": [
+    "telegram user info",
+    "user profile telegram",
+    "telegram user details",
+    "lookup user",
+    "info user telegram",
+    "profil utilisateur"
+  ],
+  "negative_keywords": [
+    "send message",
+    "send alert",
+    "check bot health",
+    "search web",
+    "read file"
+  ],
+  "examples": [
+    "get info for telegram user 123456",
+    "show me the telegram profile",
+    "find user details on telegram",
+    "quis est l'utilisateur telegram 123456"
+  ],
+  "use_cases": [
+    "inspection",
+    "user lookup",
+    "identity verification"
+  ],
+  "parameters": {
+    "user_id": "string (optional)"
+  },
+  "tool_class": "TelegramGetUserInfoTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

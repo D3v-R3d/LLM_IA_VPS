@@ -1,0 +1,60 @@
+{
+  "description": "Manage Git repositories for version control operations.",
+  "semantic_anchor": "Execute version control operations on a Git repository",
+  "intent_type": "mutate",
+  "tool_family": "git",
+  "keywords": [
+    "manage git repository",
+    "version control operations",
+    "track code changes",
+    "save code snapshot",
+    "sync with remote repo",
+    "cloner un depot",
+    "sauvegarder le code",
+    "envoyer sur github",
+    "recuperer les modifications",
+    "voir l'historique du code"
+  ],
+  "aliases": [
+    "git operations",
+    "version control",
+    "manage code history",
+    "code versioning",
+    "push pull commit",
+    "gestion depot git",
+    "controle de version"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "read file content",
+    "execute shell commands",
+    "run docker",
+    "write to filesystem"
+  ],
+  "examples": [
+    "show me the status of my git repo",
+    "commit my changes with a message",
+    "push my code to github",
+    "pull latest changes from remote",
+    "clone the project repository",
+    "montre moi le statut du depot git"
+  ],
+  "use_cases": [
+    "version control",
+    "code management",
+    "collaboration"
+  ],
+  "parameters": {
+    "command": "string (required)"
+  },
+  "tool_class": "GitTool",
+  "embedding_boost": 1.2,
+  "priority": 1,
+  "meta": {
+    "safe": false,
+    "cost": 2,
+    "parallel_safe": false,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

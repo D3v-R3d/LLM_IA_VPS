@@ -1,0 +1,60 @@
+{
+  "description": "Manage Docker containers and images for application deployment.",
+  "semantic_anchor": "Control Docker containers and manage application deployments",
+  "intent_type": "mutate",
+  "tool_family": "system",
+  "keywords": [
+    "run docker container",
+    "manage application containers",
+    "check container status",
+    "view container logs",
+    "start stop containers",
+    "demarrer un container",
+    "voir les logs",
+    "gerer les conteneurs",
+    "status des containers",
+    "lancer une application docker"
+  ],
+  "aliases": [
+    "manage containers",
+    "docker operations",
+    "container management",
+    "deploy docker",
+    "start stop restart container",
+    "gestion docker",
+    "conteneurs docker"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "read file content",
+    "execute shell commands",
+    "run git commands",
+    "write to filesystem"
+  ],
+  "examples": [
+    "show running containers",
+    "check logs of my web app container",
+    "run a new nginx container",
+    "stop the postgres container",
+    "restart the api container",
+    "affiche les containers en cours"
+  ],
+  "use_cases": [
+    "deployment",
+    "container management",
+    "monitoring"
+  ],
+  "parameters": {
+    "command": "string (required)"
+  },
+  "tool_class": "DockerTool",
+  "embedding_boost": 1.2,
+  "priority": 2,
+  "meta": {
+    "safe": false,
+    "cost": 2,
+    "parallel_safe": false,
+    "max_calls_per_run": 5,
+    "destructive": false
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "scrape_and_store",
+  "description": "Scrape web content from URLs, clean it, chunk it, create embeddings, and store in vector database.",
+  "semantic_anchor": "Scrape URLs, process content, and store in vector database",
+  "intent_type": "write",
+  "tool_family": "scraper",
+  "keywords": [
+    "scrape urls and store",
+    "scrape and embed",
+    "save webpage content",
+    "build knowledge base from urls",
+    "scraper une page et stocker",
+    "extraire et sauvegarder le contenu web",
+    "stocke le contenu des urls"
+  ],
+  "aliases": [
+    "scrape and embed",
+    "store web content",
+    "save scraped content",
+    "extract and store",
+    "scraper et stocker"
+  ],
+  "negative_keywords": [
+    "search stored content",
+    "query scraped data",
+    "find stored information"
+  ],
+  "examples": [
+    "scrape these urls and store them in the knowledge base",
+    "save content from this page for later",
+    "scraper cette page et la sauvegarder"
+  ],
+  "parameters": {
+    "urls": "array of strings (required)",
+    "collection_name": "string (optional, default web_content)",
+    "user_id": "string (optional)",
+    "max_length": "integer (optional, default 10000)",
+    "dry_run": "boolean (optional, default false)"
+  },
+  "meta": {
+    "safe": true,
+    "cost": 5,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

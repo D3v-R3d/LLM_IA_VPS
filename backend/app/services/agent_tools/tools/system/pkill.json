@@ -1,0 +1,58 @@
+{
+  "description": "Terminate a running process on the system.",
+  "semantic_anchor": "Stop a running process by its name",
+  "intent_type": "mutate",
+  "tool_family": "system",
+  "keywords": [
+    "stop a process",
+    "kill running application",
+    "terminate process",
+    "stop service",
+    "end a running program",
+    "arreter un processus",
+    "tuer une application",
+    "stopper un service",
+    "termine ce programme"
+  ],
+  "aliases": [
+    "kill process",
+    "stop service",
+    "terminate program",
+    "end process",
+    "kill application",
+    "arret processus",
+    "stopper application"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "read file content",
+    "execute shell commands",
+    "docker operations",
+    "git operations"
+  ],
+  "examples": [
+    "kill the python process",
+    "stop the nginx service",
+    "terminate the node application",
+    "end the background job",
+    "arrete le processus python"
+  ],
+  "use_cases": [
+    "process management",
+    "maintenance",
+    "cleanup"
+  ],
+  "parameters": {
+    "process_name": "string (required)"
+  },
+  "tool_class": "PkillTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": false,
+    "cost": 1,
+    "parallel_safe": false,
+    "max_calls_per_run": 0,
+    "destructive": true
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "description": "Find a specific file on the Synology NAS by its exact or partial name.",
+  "semantic_anchor": "Locate a known file by its name on network storage",
+  "intent_type": "search",
+  "tool_family": "nas",
+  "keywords": [
+    "where is my file",
+    "find a specific file",
+    "locate file on nas",
+    "search for a file by name",
+    "find the backup archive",
+    "ou est le fichier",
+    "trouve ce fichier sur le nas",
+    "localise ce fichier",
+    "cherche fichier par son nom"
+  ],
+  "aliases": [
+    "locate file by name",
+    "find file named",
+    "search for specific file",
+    "where is file",
+    "trouve fichier par nom",
+    "localise fichier",
+    "ou est ce fichier"
+  ],
+  "negative_keywords": [
+    "search for any file",
+    "browse all folders",
+    "search nas content",
+    "find folder by name",
+    "open a folder"
+  ],
+  "examples": [
+    "where is avatar.jpg",
+    "find the backup.zip file",
+    "locate my vacation photos",
+    "find the report.pdf on nas",
+    "ou est mon fichier backup.zip"
+  ],
+  "use_cases": [
+    "search",
+    "retrieval",
+    "file location"
+  ],
+  "parameters": {
+    "name": "string (required)",
+    "folder_path": "string (optional)"
+  },
+  "tool_class": "NasFindFileTool",
+  "embedding_boost": 1.1,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

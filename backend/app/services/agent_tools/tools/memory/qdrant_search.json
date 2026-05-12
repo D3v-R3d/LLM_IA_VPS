@@ -1,0 +1,60 @@
+{
+  "description": "Search your saved memories and stored content using semantic similarity.",
+  "semantic_anchor": "Find previously stored information using semantic search",
+  "intent_type": "search",
+  "tool_family": "memory",
+  "keywords": [
+    "search my saved memories",
+    "find what I stored before",
+    "search stored content",
+    "query my knowledge base",
+    "find saved notes",
+    "cherche dans mes souvenirs",
+    "trouve ce que j'ai sauvegarde",
+    "recherche dans ma memoire",
+    "trouve dans les notes sauvegardees"
+  ],
+  "aliases": [
+    "search memory",
+    "find saved info",
+    "query memory store",
+    "recall stored knowledge",
+    "search knowledge base",
+    "cherche memoire",
+    "recherche vectorielle"
+  ],
+  "negative_keywords": [
+    "save new note",
+    "store webpage",
+    "scrape url",
+    "write note",
+    "bookmark page"
+  ],
+  "examples": [
+    "search what I saved about python",
+    "find the article about AI I stored",
+    "look up my notes about machine learning",
+    "search my stored knowledge",
+    "cherche dans ma memoire sur python"
+  ],
+  "use_cases": [
+    "search",
+    "recall",
+    "knowledge retrieval"
+  ],
+  "parameters": {
+    "query": "string (required)",
+    "collection": "string (optional, default message)",
+    "limit": "number (optional, default 5)"
+  },
+  "tool_class": "QdrantSearchTool",
+  "embedding_boost": 1.1,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 5,
+    "destructive": false
+  }
+}

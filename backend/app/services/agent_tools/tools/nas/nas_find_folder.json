@@ -1,0 +1,60 @@
+{
+  "description": "Find a specific folder on the Synology NAS by its name.",
+  "semantic_anchor": "Locate a known folder by name on network storage",
+  "intent_type": "search",
+  "tool_family": "nas",
+  "keywords": [
+    "where is the folder",
+    "find a folder by name",
+    "locate folder on nas",
+    "search for a folder",
+    "find the docker folder",
+    "ou est le dossier",
+    "trouve ce dossier sur le nas",
+    "localise ce repertoire",
+    "cherche dossier par son nom"
+  ],
+  "aliases": [
+    "locate folder by name",
+    "find folder named",
+    "search for specific folder",
+    "where is folder",
+    "trouve repertoire par nom",
+    "localise dossier",
+    "ou est ce dossier"
+  ],
+  "negative_keywords": [
+    "search for files",
+    "browse all folders",
+    "search nas content",
+    "list folder contents",
+    "open a folder",
+    "show all shares"
+  ],
+  "examples": [
+    "where is the Plex folder",
+    "find the docker folder",
+    "locate the photos folder",
+    "find the backup folder",
+    "ou est le dossier photos"
+  ],
+  "use_cases": [
+    "search",
+    "retrieval",
+    "folder location"
+  ],
+  "parameters": {
+    "name": "string (required)",
+    "folder_path": "string (optional)"
+  },
+  "tool_class": "NasFindFolderTool",
+  "embedding_boost": 1.1,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

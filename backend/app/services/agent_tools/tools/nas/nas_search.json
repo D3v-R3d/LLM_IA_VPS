@@ -1,0 +1,62 @@
+{
+  "description": "Search for files on the Synology NAS by keyword throughout all folders.",
+  "semantic_anchor": "Find any file on network storage by searching its name or content",
+  "intent_type": "search",
+  "tool_family": "nas",
+  "keywords": [
+    "search for files",
+    "find any file on nas",
+    "locate files across all folders",
+    "search in my storage",
+    "find something on my nas",
+    "trouve un fichier",
+    "cherche des fichiers sur le nas",
+    "recherche sur le stockage",
+    "ou sont mes fichiers",
+    "trouve dans le nas"
+  ],
+  "aliases": [
+    "search nas storage",
+    "find files everywhere",
+    "look for files on network drive",
+    "locate files on synology",
+    "search network storage",
+    "cherche fichier sur nas",
+    "recherche globale nas",
+    "trouve fichier serveur"
+  ],
+  "negative_keywords": [
+    "list all shares",
+    "show available folders",
+    "open a specific folder",
+    "browse folder contents",
+    "find a folder by name"
+  ],
+  "examples": [
+    "find movie.mkv on my nas",
+    "search all folders for avatar.jpg",
+    "locate any file named backup",
+    "search the nas for pdf documents",
+    "trouve le fichier movie.mkv sur le nas"
+  ],
+  "use_cases": [
+    "search",
+    "discovery",
+    "file retrieval"
+  ],
+  "parameters": {
+    "keyword": "string (required)",
+    "folder_path": "string (optional)",
+    "recursive": "boolean (default true)"
+  },
+  "tool_class": "NasSearchTool",
+  "embedding_boost": 1.2,
+  "priority": 2,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

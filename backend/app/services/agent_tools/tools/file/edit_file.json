@@ -1,0 +1,62 @@
+{
+  "description": "Modify specific content inside a file by replacing text.",
+  "semantic_anchor": "Change or update specific text within a file",
+  "intent_type": "mutate",
+  "tool_family": "filesystem",
+  "keywords": [
+    "modify file content",
+    "replace text in file",
+    "update file",
+    "change file contents",
+    "edit document",
+    "modifier un fichier",
+    "remplace ce texte",
+    "change le contenu du fichier",
+    "edite ce fichier",
+    "met a jour ce fichier"
+  ],
+  "aliases": [
+    "modify file",
+    "update file",
+    "change file",
+    "alter file",
+    "replace in file",
+    "edition fichier",
+    "modification fichier",
+    "mise a jour fichier"
+  ],
+  "negative_keywords": [
+    "read file",
+    "open file",
+    "view file content",
+    "create new file",
+    "write new file"
+  ],
+  "examples": [
+    "replace hello with hi in test.txt",
+    "update the config file",
+    "change the port number in .env",
+    "modify the settings",
+    "remplace error par warning dans app.py"
+  ],
+  "use_cases": [
+    "modification",
+    "configuration",
+    "updates"
+  ],
+  "parameters": {
+    "path": "string (required)",
+    "old_string": "string (required)",
+    "new_string": "string (required)"
+  },
+  "tool_class": "EditTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": false,
+    "cost": 1,
+    "parallel_safe": false,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

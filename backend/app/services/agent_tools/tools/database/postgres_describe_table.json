@@ -1,0 +1,60 @@
+{
+  "description": "Inspect the column structure of a specific database table.",
+  "semantic_anchor": "Understand the schema and columns of a database table",
+  "intent_type": "inspect",
+  "tool_family": "database",
+  "keywords": [
+    "what columns does it have",
+    "show table structure",
+    "describe table format",
+    "inspect table columns",
+    "check table schema",
+    "quelles sont les colonnes",
+    "structure de la table",
+    "formats des champs",
+    "comment est organisee cette table"
+  ],
+  "aliases": [
+    "inspect schema",
+    "show columns",
+    "describe structure",
+    "view table definition",
+    "colonnes de la table",
+    "schema de la table",
+    "format des donnees"
+  ],
+  "negative_keywords": [
+    "read data from table",
+    "select rows",
+    "show table contents",
+    "list all tables",
+    "query data",
+    "insert update delete"
+  ],
+  "examples": [
+    "what columns does the users table have",
+    "describe the structure of the orders table",
+    "show me the format of the products table",
+    "what fields are available in the transactions table",
+    "quelles colonnes contient la table clients"
+  ],
+  "use_cases": [
+    "inspection",
+    "schema discovery",
+    "debugging",
+    "documentation"
+  ],
+  "parameters": {
+    "table_name": "string (required)"
+  },
+  "tool_class": "PostgresDescribeTableTool",
+  "embedding_boost": 1.0,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "description": "Retrieve data from PostgreSQL using read-only SQL queries.",
+  "semantic_anchor": "Fetch structured data from a relational database in read-only mode",
+  "intent_type": "read",
+  "tool_family": "database",
+  "keywords": [
+    "get data from database",
+    "show me user records",
+    "view orders list",
+    "check table content",
+    "see what's in the database",
+    "affiche les donnees",
+    "recupere les informations",
+    "consulter la base de donnees",
+    "voir les lignes d'une table",
+    "quels sont les utilisateurs",
+    "trouve les commandes"
+  ],
+  "aliases": [
+    "query database",
+    "fetch records",
+    "get rows from table",
+    "select data",
+    "read from database",
+    "interroger la base",
+    "lecture base de donnees"
+  ],
+  "negative_keywords": [
+    "insert into database",
+    "update database",
+    "delete from table",
+    "write to database",
+    "modify records",
+    "drop table",
+    "create table"
+  ],
+  "examples": [
+    "show me all users in the database",
+    "what is inside the orders table",
+    "get latest transactions from last week",
+    "display the content of the products table",
+    "quels sont les utilisateurs enregistres",
+    "recupere les donnees de la table clients"
+  ],
+  "use_cases": [
+    "data retrieval",
+    "reporting",
+    "inspection",
+    "analytics"
+  ],
+  "parameters": {
+    "query": "string (required)"
+  },
+  "tool_class": "PostgresQueryReadTool",
+  "embedding_boost": 1.2,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 2,
+    "parallel_safe": true,
+    "max_calls_per_run": 5,
+    "destructive": false
+  }
+}

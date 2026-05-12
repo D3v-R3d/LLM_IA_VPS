@@ -1,0 +1,62 @@
+{
+  "description": "Modify database records with INSERT, UPDATE, or DELETE operations.",
+  "semantic_anchor": "Write or update data in a relational database",
+  "intent_type": "write",
+  "tool_family": "database",
+  "keywords": [
+    "add new record to database",
+    "update user information",
+    "delete old entries",
+    "insert data into table",
+    "modify database records",
+    "ajouter une entree",
+    "mettre a jour des donnees",
+    "supprimer des lignes",
+    "ecrire dans la base",
+    "creer un enregistrement"
+  ],
+  "aliases": [
+    "modify database",
+    "change records",
+    "alter data",
+    "write to database",
+    "insert update delete",
+    "ecrire dans base",
+    "maj base de donnees"
+  ],
+  "negative_keywords": [
+    "read from database",
+    "select data",
+    "show me records",
+    "query database",
+    "describe table",
+    "list tables"
+  ],
+  "examples": [
+    "add a new user with email and name",
+    "update the status of order 123 to shipped",
+    "delete all records older than 30 days",
+    "change the password for user admin",
+    "insert a new product in the catalog",
+    "supprime les entrees de log de plus de 7 jours"
+  ],
+  "use_cases": [
+    "data modification",
+    "user management",
+    "data cleanup",
+    "mutation"
+  ],
+  "parameters": {
+    "query": "string (required)"
+  },
+  "tool_class": "PostgresQueryWriteTool",
+  "embedding_boost": 1.3,
+  "priority": 2,
+  "meta": {
+    "safe": false,
+    "cost": 2,
+    "parallel_safe": false,
+    "max_calls_per_run": 0,
+    "destructive": true
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "description": "Read and display the content of a file on the filesystem.",
+  "semantic_anchor": "Retrieve and display the contents of a file",
+  "intent_type": "read",
+  "tool_family": "filesystem",
+  "keywords": [
+    "open and read file",
+    "display file content",
+    "view text file",
+    "read document",
+    "look at file contents",
+    "lis le fichier",
+    "affiche le contenu du fichier",
+    "ouvre ce fichier",
+    "voir le contenu",
+    "lit moi ce fichier"
+  ],
+  "aliases": [
+    "open file",
+    "read document",
+    "view file",
+    "display contents",
+    "show file",
+    "lecture fichier",
+    "voir fichier",
+    "ouvre et lis"
+  ],
+  "negative_keywords": [
+    "write to file",
+    "create file",
+    "delete file",
+    "edit file",
+    "modify file content",
+    "append to file"
+  ],
+  "examples": [
+    "read the config file",
+    "show me the content of readme.txt",
+    "display what is inside app.py",
+    "open and read the log file",
+    "lis le fichier readme.md"
+  ],
+  "use_cases": [
+    "inspection",
+    "code review",
+    "data retrieval"
+  ],
+  "parameters": {
+    "path": "string (required)"
+  },
+  "tool_class": "ReadTool",
+  "embedding_boost": 1.2,
+  "priority": 1,
+  "meta": {
+    "safe": true,
+    "cost": 1,
+    "parallel_safe": true,
+    "max_calls_per_run": 0,
+    "destructive": false
+  }
+}
