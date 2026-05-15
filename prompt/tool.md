@@ -23,6 +23,8 @@
 - postgres_query_read: ok
 - postgres_list_tables: ok
 - postgres_describe_table: ok
+- glob: ok
+- api_call: failed
 
 ## Recent Tests
 - scrape_and_store failed
@@ -35,6 +37,8 @@
 - scrape_and_store success
 - postgres_list_tables success
 - postgres_describe_table success
+- glob success
+- api_call failed
 
 ## Notes
 - NAS contains images

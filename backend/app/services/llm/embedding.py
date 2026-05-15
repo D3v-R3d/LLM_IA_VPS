@@ -32,13 +32,13 @@ class EmbeddingService:
         self.base_url = base_url or settings.OLLAMA_HOST
         self.model = model
 
-    def embed(
+    async def embed(
         self,
         input: Union[str, List[str]],
         truncate: bool = True
     ) -> Dict[str, Any]:
         """
-        Generate embeddings for text (sync).
+        Generate embeddings for text (async).
 
         Args:
             input: Single text string or list of texts
@@ -47,20 +47,20 @@ class EmbeddingService:
         Returns:
             API response with embeddings array
         """
-        with httpx.Client(timeout=300.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             payload = {
                 "model": self.model,
                 "input": input,
                 "truncate": truncate
             }
-            response = client.post(
+            response = await client.post(
                 f"{self.base_url}/api/embed",
                 json=payload
             )
             response.raise_for_status()
             return response.json()
 
-    def embed_single(self, text: str) -> List[float]:
+    async def embed_single(self, text: str) -> List[float]:
         """
         Generate embedding for single text.
 
@@ -70,11 +70,11 @@ class EmbeddingService:
         Returns:
             Embedding vector
         """
-        result = self.embed(text)
+        result = await self.embed(text)
         embeddings = result.get("embeddings", [])
         return embeddings[0] if embeddings else []
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for multiple texts.
 
@@ -84,7 +84,7 @@ class EmbeddingService:
         Returns:
             List of embedding vectors
         """
-        result = self.embed(texts)
+        result = await self.embed(texts)
         return result.get("embeddings", [])
 
     def list_models(self) -> List[str]:

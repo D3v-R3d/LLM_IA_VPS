@@ -90,6 +90,8 @@ services:
     image: postgres:15-alpine
     container_name: tower_postgres
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
       - POSTGRES_DB=tower_db
       - POSTGRES_USER=postgres

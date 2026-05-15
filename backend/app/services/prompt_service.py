@@ -52,6 +52,15 @@ class PromptService:
         return ""
 
     @staticmethod
+    def get_synthesis_prompt() -> str:
+        try:
+            synth_path = f"{settings.PROMPT_DIR}/inject/synthesis.md"
+            with open(synth_path, "r") as f:
+                return f.read()
+        except Exception:
+            return "You transform raw tool outputs into clear, friendly Telegram messages. You are a helpful assistant talking to a human — not a log formatter, not a report generator."
+
+    @staticmethod
     def build_files_section(files_content: dict[str, str]) -> str:
         section = ""
         for filename, content in files_content.items():
